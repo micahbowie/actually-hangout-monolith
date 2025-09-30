@@ -19,8 +19,7 @@ import { HelloResolver } from './hello/hello.resolver';
 import { GraphQLModule } from '@nestjs/graphql';
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
 import { join } from 'path';
-
-const isProduction = process.env.NODE_ENV === 'production';
+import { isDev } from './utils';
 
 @Module({
   imports: [
@@ -30,7 +29,7 @@ const isProduction = process.env.NODE_ENV === 'production';
       driver: ApolloDriver,
       sortSchema: true,
       autoSchemaFile: join(process.cwd(), 'src/schema.gql'),
-      playground: !isProduction,
+      playground: isDev,
     }),
   ],
   controllers: [AppController],
