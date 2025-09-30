@@ -17,9 +17,11 @@ describe('AppController (e2e)', () => {
   });
 
   it('/ (GET)', () => {
+    /* eslint-disable @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
     return request(app.getHttpServer())
       .get('/')
       .expect(200)
       .expect('Hello World!');
+    /* eslint-enable @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
   });
 });
