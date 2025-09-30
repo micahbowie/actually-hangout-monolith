@@ -12,6 +12,9 @@ import { AppService } from './app.service';
 // health
 import { HealthModule } from './health/health.module';
 
+// hello
+import { HelloResolver } from './hello/hello.resolver';
+
 // graphql
 import { GraphQLModule } from '@nestjs/graphql';
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
@@ -33,6 +36,7 @@ const isProduction = process.env.NODE_ENV === 'production';
   controllers: [AppController],
   providers: [
     AppService,
+    HelloResolver,
     {
       provide: APP_FILTER,
       useClass: SentryGlobalFilter,
