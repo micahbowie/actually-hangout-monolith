@@ -6,7 +6,7 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
-    "build": "nest build",
+    "build": "nest build && pnpm sentry:sourcemaps",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "lint": "eslint \"{src,apps,libs,test,infra}/**/*.ts\" --fix",
     "start": "nest start",
@@ -19,7 +19,8 @@
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "test:watch": "jest --watch",
     "prepare": "husky",
-    "clean": "concurrently \"pnpm test\" \"pnpm lint\" \"pnpm format\""
+    "clean": "concurrently \"pnpm test\" \"pnpm lint\" \"pnpm format\"",
+    "sentry:sourcemaps": "sentry-cli sourcemaps inject --org good-for-nothing-tech --project actually-monolith2 ./dist && sentry-cli sourcemaps upload --org good-for-nothing-tech --project actually-monolith2 ./dist"
   },
   "dependencies": {
     "@apollo/server": "^4.10.4",
@@ -33,6 +34,7 @@
     "@nestjs/platform-express": "^11.0.1",
     "@nestjs/terminus": "^11.0.0",
     "@nestjs/typeorm": "^11.0.0",
+    "@sentry/cli": "^2.56.0",
     "@sentry/nestjs": "^10.16.0",
     "@sentry/node": "^10.16.0",
     "@sentry/profiling-node": "^10.16.0",
