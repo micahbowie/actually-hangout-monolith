@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 
 // sentry
 import { SentryModule } from '@sentry/nestjs/setup';
@@ -27,6 +27,7 @@ import { GraphQLModule } from '@nestjs/graphql';
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
 import { join } from 'path';
 import { isDev } from './utils';
+import { GraphQLLoggerMiddleware } from './graphql/graphql-logger.middleware';
 
 const ONE_MINUTE_IN_MS = 60000;
 const FIVE_THOUSAND = 5000;
@@ -70,4 +71,8 @@ const FIVE_THOUSAND = 5000;
     },
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(GraphQLLoggerMiddleware).forRoutes('graphql');
+  }
+}
