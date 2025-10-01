@@ -10,6 +10,7 @@ async function bootstrap() {
       json: true,
     }),
     bufferLogs: true,
+    cors: true,
   });
   await app.listen(process.env.PORT ?? 3000);
 }
