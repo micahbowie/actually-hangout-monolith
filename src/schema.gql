@@ -8,4 +8,5 @@ type Hello {
 
 type Query {
   hello: Hello!
+  helloAuth: Hello!
 }

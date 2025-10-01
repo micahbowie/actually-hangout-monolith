@@ -29,6 +29,9 @@ import { join } from 'path';
 import { isDev } from './utils';
 import { GraphQLLoggerMiddleware } from './graphql/graphql-logger.middleware';
 
+// auth
+import { ClerkAuthMiddleware } from './auth/clerk-auth.middleware';
+
 const ONE_MINUTE_IN_MS = 60000;
 const FIVE_THOUSAND = 5000;
 
@@ -73,6 +76,8 @@ const FIVE_THOUSAND = 5000;
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(GraphQLLoggerMiddleware).forRoutes('graphql');
+    consumer
+      .apply(ClerkAuthMiddleware, GraphQLLoggerMiddleware)
+      .forRoutes('graphql');
   }
 }

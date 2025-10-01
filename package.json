@@ -24,7 +24,9 @@
   },
   "dependencies": {
     "@apollo/server": "^4.10.4",
+    "@clerk/backend": "^2.17.0",
     "@clerk/clerk-js": "^5.96.0",
+    "@clerk/express": "^1.7.35",
     "@keyv/valkey": "^1.0.8",
     "@nestjs/apollo": "^13.1.0",
     "@nestjs/cache-manager": "^3.0.1",
