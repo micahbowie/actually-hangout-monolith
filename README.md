@@ -8,6 +8,7 @@ NestJS-based monolith API with GraphQL, PostgreSQL, and Clerk authentication.
 - PostgreSQL 14+
 - pnpm (recommended) or npm
 - Redis/Valkey (for caching)
+- Temporal Server (for workflow orchestration)
 
 ## Getting Started
 
@@ -30,6 +31,7 @@ Update the following required variables in `.env`:
 - `DATABASE_*` - PostgreSQL connection details
 - `CLERK_*` - Clerk authentication keys from [Clerk Dashboard](https://dashboard.clerk.com)
 - `VALKEY_URL` - Redis/Valkey connection string
+- `TEMPORAL_*` - Temporal server connection (defaults to localhost:7233 in development)
 
 ### 3. Database Setup
 
@@ -45,7 +47,26 @@ Run migrations:
 pnpm migration:run
 ```
 
-### 4. Start Development Server
+### 4. Start Temporal Server (Development)
+
+For local development, run Temporal using Docker:
+
+```bash
+# Start Temporal dev server
+temporal server start-dev
+```
+
+Or using Docker Compose. The Temporal UI will be available at `http://localhost:8233`
+
+### 5. Start Temporal Worker
+
+In a separate terminal, start the Temporal worker to process workflows:
+
+```bash
+pnpm start:worker
+```
+
+### 6. Start Development Server
 
 ```bash
 pnpm start:dev
@@ -107,6 +128,12 @@ src/
 ├── health/                 # Health check endpoints
 │   ├── health.controller.ts
 │   └── health.module.ts
+├── temporal/               # Temporal workflows and activities
+│   ├── temporal.module.ts
+│   ├── temporal.service.ts
+│   ├── workflows/          # Temporal workflows
+│   ├── activities/         # Temporal activities
+│   └── worker/             # Worker entry point
 └── [feature-modules]/      # Feature-specific modules
     ├── *.module.ts
     ├── *.resolver.ts       # GraphQL resolvers
@@ -142,6 +169,36 @@ All logs include:
 ### Database
 
 TypeORM with PostgreSQL using snake_case naming convention. Entities use the `.entity.ts` suffix and are auto-discovered.
+
+### Temporal Workflows
+
+Temporal workflows enable reliable, durable execution of long-running processes. The hello resolver demonstrates workflow integration:
+
+```typescript
+import { TemporalService } from '../temporal/temporal.service';
+import { helloWorkflow } from '../temporal/workflows';
+
+constructor(private readonly temporalService: TemporalService) {}
+
+async executeWorkflow() {
+  const client = await this.temporalService.getClient();
+  const handle = await client.workflow.start(helloWorkflow, {
+    args: ['example'],
+    workflowId: `workflow-${uuidv4()}`,
+    taskQueue: 'actually-core-logic',
+    workflowExecutionTimeout: '2m',
+  });
+
+  const result = await handle.result();
+  return result;
+}
+```
+
+**Key Concepts:**
+- **Workflows**: Durable orchestration logic (in `src/temporal/workflows/`)
+- **Activities**: Individual task implementations (in `src/temporal/activities/`)
+- **Worker**: Processes workflows and activities (run via `pnpm start:worker`)
+- **Task Queue**: `actually-core-logic` - worker and client must use the same queue
 
 ## Testing
 
@@ -186,13 +243,22 @@ pnpm clean
 
 ## Scripts
 
+### Development
 - `pnpm start:dev` - Start development server with hot reload
-- `pnpm start:prod` - Start production server
+- `pnpm start:worker` - Start Temporal worker
 - `pnpm build` - Build for production
+- `pnpm start:prod` - Start production server
+
+### Database
 - `pnpm migration:generate` - Generate new migration
 - `pnpm migration:run` - Run pending migrations
 - `pnpm migration:revert` - Revert last migration
 - `pnpm migration:show` - Show migration status
+
+### Code Quality
+- `pnpm lint` - Run ESLint
+- `pnpm format` - Format code with Prettier
+- `pnpm clean` - Run tests, lint, and format
 
 ## Environment Variables
 

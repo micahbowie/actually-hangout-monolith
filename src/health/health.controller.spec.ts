@@ -5,6 +5,7 @@ import {
   HealthCheckResult,
   TypeOrmHealthIndicator,
 } from '@nestjs/terminus';
+import { TemporalHealthIndicator } from './temporal-health.indicator';
 
 describe('HealthController', () => {
   let controller: HealthController;
@@ -17,10 +18,16 @@ describe('HealthController', () => {
       database: {
         status: 'up',
       },
+      temporal: {
+        status: 'up',
+      },
     },
     error: {},
     details: {
       database: {
+        status: 'up',
+      },
+      temporal: {
         status: 'up',
       },
     },
@@ -35,6 +42,10 @@ describe('HealthController', () => {
       pingCheck: jest.fn(),
     };
 
+    const mockTemporalHealthIndicator = {
+      isHealthy: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       controllers: [HealthController],
       providers: [
@@ -45,6 +56,10 @@ describe('HealthController', () => {
         {
           provide: TypeOrmHealthIndicator,
           useValue: mockTypeOrmHealthIndicator,
+        },
+        {
+          provide: TemporalHealthIndicator,
+          useValue: mockTemporalHealthIndicator,
         },
       ],
     }).compile();
@@ -74,6 +89,7 @@ describe('HealthController', () => {
       // Assert
       // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(healthCheckService.check).toHaveBeenCalledWith([
+        expect.any(Function),
         expect.any(Function),
       ]);
       expect(result).toEqual(mockHealthCheckResult);
@@ -108,6 +124,7 @@ describe('HealthController', () => {
       // Assert
       // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(healthCheckService.check).toHaveBeenCalledWith([
+        expect.any(Function),
         expect.any(Function),
       ]);
       expect(result).toEqual(mockErrorResult);

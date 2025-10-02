@@ -13,7 +13,7 @@ export class ClerkAuthGuard implements CanActivate {
     const ctx = GqlExecutionContext.create(context);
     const request = ctx.getContext().req; // eslint-disable-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
 
-    const auth = getAuth(request);
+    const auth = getAuth(request); // eslint-disable-line @typescript-eslint/no-unsafe-argument
 
     if (!auth.userId) {
       throw new UnauthorizedException('Authentication required');

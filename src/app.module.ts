@@ -40,6 +40,9 @@ import { ClerkAuthMiddleware } from './auth/clerk-auth.middleware';
 import { RequestIdMiddleware } from './common/request-id.middleware';
 import { LoggingInterceptor } from './common/logging.interceptor';
 
+// temporal
+import { TemporalModule } from './temporal/temporal.module';
+
 const ONE_MINUTE_IN_MS = 60000;
 const FIVE_THOUSAND = 5000;
 
@@ -47,6 +50,7 @@ const FIVE_THOUSAND = 5000;
   imports: [
     SentryModule.forRoot(),
     TypeOrmModule.forRoot(getDatabaseConfig()),
+    TemporalModule,
     HealthModule,
     CacheModule.registerAsync({
       isGlobal: true,
