@@ -6,6 +6,7 @@ import {
   TypeOrmHealthIndicator,
 } from '@nestjs/terminus';
 import { TemporalHealthIndicator } from './temporal-health.indicator';
+import { RedisHealthIndicator } from './redis-health.indicator';
 
 describe('HealthController', () => {
   let controller: HealthController;
@@ -21,6 +22,9 @@ describe('HealthController', () => {
       temporal: {
         status: 'up',
       },
+      redis: {
+        status: 'up',
+      },
     },
     error: {},
     details: {
@@ -28,6 +32,9 @@ describe('HealthController', () => {
         status: 'up',
       },
       temporal: {
+        status: 'up',
+      },
+      redis: {
         status: 'up',
       },
     },
@@ -46,6 +53,10 @@ describe('HealthController', () => {
       isHealthy: jest.fn(),
     };
 
+    const mockRedisHealthIndicator = {
+      isHealthy: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       controllers: [HealthController],
       providers: [
@@ -60,6 +71,10 @@ describe('HealthController', () => {
         {
           provide: TemporalHealthIndicator,
           useValue: mockTemporalHealthIndicator,
+        },
+        {
+          provide: RedisHealthIndicator,
+          useValue: mockRedisHealthIndicator,
         },
       ],
     }).compile();
@@ -89,6 +104,7 @@ describe('HealthController', () => {
       // Assert
       // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(healthCheckService.check).toHaveBeenCalledWith([
+        expect.any(Function),
         expect.any(Function),
         expect.any(Function),
       ]);
@@ -124,6 +140,7 @@ describe('HealthController', () => {
       // Assert
       // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(healthCheckService.check).toHaveBeenCalledWith([
+        expect.any(Function),
         expect.any(Function),
         expect.any(Function),
       ]);
