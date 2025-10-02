@@ -78,6 +78,16 @@ The server will start at `http://localhost:3000`
 - Health Check: `http://localhost:3000/health/_details`
 - Ping: `http://localhost:3000/health/ping`
 
+### 7. Expose Local Server with ngrok (Optional)
+
+For testing webhooks or exposing your local server to the internet:
+
+```bash
+ngrok http --url="api.goodfornothing.ngrok.io" 3000
+```
+
+This will make your local server accessible at `https://api.goodfornothing.ngrok.io`
+
 ## Database Migrations
 
 ### Create a new migration
