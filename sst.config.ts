@@ -41,6 +41,7 @@ export default $config({
     await import('./infra/elasticache.js');
     await import('./infra/vpc.js');
     const service = await import('./infra/services.js');
+    await import('./infra/dev.js');
 
     return {
       actuallyMonolith: 'actually-monolith',
