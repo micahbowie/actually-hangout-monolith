@@ -3,54 +3,54 @@
 /* eslint-disable */
 /* deno-fmt-ignore-file */
 
-declare module 'sst' {
+declare module "sst" {
   export interface Resource {
-    ActuallyMonolithCache: {
-      host: string;
-      password: string;
-      port: number;
-      type: 'sst.aws.Redis';
-      username: string;
-    };
-    ActuallyMonolithDatabase: {
-      database: string;
-      host: string;
-      password: string;
-      port: number;
-      type: 'sst.aws.Postgres';
-      username: string;
-    };
-    ActuallyMonolithVPC: {
-      type: 'sst.aws.Vpc';
-    };
-    ActuallyMonolithWeb: {
-      service: string;
-      type: 'sst.aws.Service';
-      url: string;
-    };
-    ActuallyMonolithWorker: {
-      service: string;
-      type: 'sst.aws.Service';
-    };
-    ClerkPublishableKey: {
-      type: 'sst.sst.Secret';
-      value: string;
-    };
-    ClerkSecretKey: {
-      type: 'sst.sst.Secret';
-      value: string;
-    };
-    ClerkWebhookSecret: {
-      type: 'sst.sst.Secret';
-      value: string;
-    };
-    TemporalApiKey: {
-      type: 'sst.sst.Secret';
-      value: string;
-    };
+    "ActuallyMonolithCache": {
+      "host": string
+      "password": string
+      "port": number
+      "type": "sst.aws.Redis"
+      "username": string
+    }
+    "ActuallyMonolithDatabase": {
+      "database": string
+      "host": string
+      "password": string
+      "port": number
+      "type": "sst.aws.Postgres"
+      "username": string
+    }
+    "ActuallyMonolithVPC": {
+      "type": "sst.aws.Vpc"
+    }
+    "ActuallyMonolithWeb": {
+      "service": string
+      "type": "sst.aws.Service"
+      "url": string
+    }
+    "ActuallyMonolithWorker": {
+      "service": string
+      "type": "sst.aws.Service"
+    }
+    "ClerkPublishableKey": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "ClerkSecretKey": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "ClerkWebhookSecret": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "TemporalApiKey": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
   }
 }
 /// <reference path="sst-env.d.ts" />
 
-import 'sst';
-export {};
+import "sst"
+export {}
