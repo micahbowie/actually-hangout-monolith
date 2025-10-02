@@ -22,6 +22,10 @@ import { HealthModule } from './health/health.module';
 // hello
 import { HelloResolver } from './hello/hello.resolver';
 
+// database
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { getDatabaseConfig } from './db/config';
+
 // graphql
 import { GraphQLModule } from '@nestjs/graphql';
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
@@ -42,6 +46,7 @@ const FIVE_THOUSAND = 5000;
 @Module({
   imports: [
     SentryModule.forRoot(),
+    TypeOrmModule.forRoot(getDatabaseConfig()),
     HealthModule,
     CacheModule.registerAsync({
       isGlobal: true,

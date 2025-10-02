@@ -5,11 +5,12 @@ WORKDIR /app
 
 # Copy package files
 COPY package*.json ./
+COPY pnpm-lock.yaml ./
 COPY tsconfig*.json ./
 
 # Install dependencies including devDependencies for building
 # This layer will be cached if package files haven't changed
-RUN pnpm ci
+RUN corepack enable pnpm && pnpm install --frozen-lockfile
 
 # Copy only source code needed for build
 # Separate copy commands to maximize cache efficiency
@@ -27,10 +28,11 @@ WORKDIR /app
 # Install system dependencies first (rarely changes)
 # Combine RUN commands to reduce layers
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends dumb-init ca-certificates pnpm && \
+    apt-get install -y --no-install-recommends dumb-init ca-certificates && \
     rm -rf /var/lib/apt/lists/* && \
     groupadd -g 1001 nodejs && \
-    useradd -u 1001 -g nodejs -m nodejs
+    useradd -u 1001 -g nodejs -m nodejs && \
+    corepack enable pnpm
 
 # Copy package files
 COPY package*.json ./
@@ -39,7 +41,7 @@ COPY pnpm-lock.yaml ./
 # Install only production dependencies with cache mount for faster rebuilds
 # The cache mount persists pnpm cache between builds
 RUN --mount=type=cache,target=/root/.local/share/pnpm \
-    pnpm ci --only=production
+    pnpm install --prod --frozen-lockfile
 
 # Copy built application from builder stage
 COPY --from=builder /app/dist ./dist
@@ -65,5 +67,5 @@ CMD sh -c 'if [ "$PROCESS_TYPE" = "worker" ]; then \
             node dist/src/temporal/worker/index.js; \
           else \
             echo "Starting as API server..."; \
-            node dist/main.js; \
+            node dist/src/main.js; \
           fi'

@@ -12,7 +12,7 @@
     "start": "nest start",
     "start:debug": "nest start --debug --watch",
     "start:dev": "lsof -ti:3000 | xargs kill -9 && nest start --watch",
-    "start:prod": "node dist/main",
+    "start:prod": "node dist/src/main",
     "test": "jest",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
@@ -20,7 +20,13 @@
     "test:watch": "jest --watch",
     "prepare": "husky",
     "clean": "concurrently \"pnpm test\" \"pnpm lint\" \"pnpm format\"",
-    "sentry:sourcemaps": "sentry-cli sourcemaps inject --org good-for-nothing-tech --project actually-monolith2 ./dist && sentry-cli sourcemaps upload --org good-for-nothing-tech --project actually-monolith2 ./dist"
+    "sentry:sourcemaps": "sentry-cli sourcemaps inject --org good-for-nothing-tech --project actually-monolith2 ./dist && sentry-cli sourcemaps upload --org good-for-nothing-tech --project actually-monolith2 ./dist",
+    "typeorm": "typeorm-ts-node-commonjs",
+    "migration:generate": "typeorm-ts-node-commonjs migration:generate -d src/db/data-source.ts",
+    "migration:create": "typeorm-ts-node-commonjs migration:create",
+    "migration:run": "typeorm-ts-node-commonjs migration:run -d src/db/data-source.ts",
+    "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/db/data-source.ts",
+    "migration:show": "typeorm-ts-node-commonjs migration:show -d src/db/data-source.ts"
   },
   "dependencies": {
     "@apollo/server": "^4.10.4",
