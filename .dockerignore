@@ -55,9 +55,6 @@ logs/
 tmp/
 temp/
 
-# sst
-.sst
-
 docs/
 
 prompt.md

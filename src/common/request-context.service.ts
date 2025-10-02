@@ -14,10 +14,6 @@ export class RequestContextService {
     return store?.requestId;
   }
 
-  static setRequestContext(context: RequestContext): void {
-    this.asyncLocalStorage.enterWith(context);
-  }
-
   static run<T>(context: RequestContext, callback: () => T): T {
     return this.asyncLocalStorage.run(context, callback);
   }

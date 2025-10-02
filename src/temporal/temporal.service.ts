@@ -6,9 +6,10 @@ import { getTemporalConnection } from './temporal.config';
 export class TemporalService implements OnModuleInit, OnModuleDestroy {
   private client: Client | null = null;
   private connection: Connection | null = null;
+  private initPromise: Promise<void> | null = null;
 
   async onModuleInit() {
-    await this.getClient();
+    await this.initialize();
   }
 
   async onModuleDestroy() {
@@ -17,16 +18,41 @@ export class TemporalService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  async getClient(): Promise<Client> {
-    if (!this.client) {
-      this.connection = await Connection.connect({
-        ...getTemporalConnection(),
-      });
+  private async initialize(): Promise<void> {
+    // Guard against concurrent initialization
+    if (this.initPromise) {
+      return this.initPromise;
+    }
 
-      this.client = new Client({
-        connection: this.connection,
-        namespace: process.env.TEMPORAL_NAMESPACE || 'default',
-      });
+    if (this.client) {
+      return;
+    }
+
+    this.initPromise = (async () => {
+      try {
+        this.connection = await Connection.connect({
+          ...getTemporalConnection(),
+        });
+
+        this.client = new Client({
+          connection: this.connection,
+          namespace: process.env.TEMPORAL_NAMESPACE || 'default',
+        });
+      } catch (error) {
+        // Reset promise on failure to allow retry
+        this.initPromise = null;
+        throw error;
+      }
+    })();
+
+    await this.initPromise;
+  }
+
+  async getClient(): Promise<Client> {
+    await this.initialize();
+
+    if (!this.client) {
+      throw new Error('Temporal client is not initialized');
     }
 
     return this.client;

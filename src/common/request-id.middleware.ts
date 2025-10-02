@@ -15,9 +15,9 @@ export class RequestIdMiddleware implements NestMiddleware {
     // Set the request ID in the response header
     res.setHeader('x-request-id', requestId);
 
-    // Store the request ID in AsyncLocalStorage
-    RequestContextService.setRequestContext({ requestId });
-
-    next();
+    // Store the request ID in AsyncLocalStorage using run() for isolation
+    RequestContextService.run({ requestId }, () => {
+      next();
+    });
   }
 }

@@ -28,12 +28,13 @@ export class LoggingInterceptor implements NestInterceptor {
       tap({
         next: () => {
           const responseTime = Date.now() - startTime;
+          const statusCode = this.getActualStatusCode(context);
           this.logResponse(
             method,
             url,
             operationName,
             responseTime,
-            200,
+            statusCode,
             requestType as string,
           );
         },
@@ -65,12 +66,19 @@ export class LoggingInterceptor implements NestInterceptor {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
       const request = gqlContext.getContext().req;
 
+      // Extract operation name from operation definition, fall back to field name
+
+      const operationName =
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        (info.operation?.name?.value as string | undefined) ||
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        (info.fieldName as string);
+
       return {
         method: 'GRAPHQL',
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         url: (request?.url as string) || '/graphql',
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-        operationName: info.fieldName as string,
+        operationName,
       };
     }
 
@@ -83,6 +91,17 @@ export class LoggingInterceptor implements NestInterceptor {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       url: request.url as string,
     };
+  }
+
+  private getActualStatusCode(context: ExecutionContext): number {
+    if (context.getType<string>() === 'graphql') {
+      return 200;
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const response = context.switchToHttp().getResponse();
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access
+    return response?.statusCode ?? 200;
   }
 
   private getStatusCode(error: unknown): number {

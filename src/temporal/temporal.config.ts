@@ -1,10 +1,7 @@
 import { isDev } from '../utils';
 
 export const getTemporalConnection = () => {
-  // Always default to localhost:7233 if no address is provided
-  const address =
-    process.env.TEMPORAL_ADDRESS ||
-    (isDev ? 'localhost:7233' : 'localhost:7233');
+  const address = process.env.TEMPORAL_ADDRESS || 'localhost:7233';
 
   if (isDev) {
     return {
@@ -13,9 +10,16 @@ export const getTemporalConnection = () => {
     };
   }
 
+  const apiKey = process.env.TEMPORAL_API_KEY;
+  if (!apiKey) {
+    throw new Error(
+      'TEMPORAL_API_KEY is required for production environment. Set TEMPORAL_API_KEY environment variable.',
+    );
+  }
+
   return {
     address,
     tls: true,
-    apiKey: process.env.TEMPORAL_API_KEY || '',
+    apiKey,
   };
 };
