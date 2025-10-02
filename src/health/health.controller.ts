@@ -12,7 +12,7 @@ export class HealthController {
     private db: TypeOrmHealthIndicator,
   ) {}
 
-  @Get()
+  @Get('_details')
   @HealthCheck()
   check() {
     return this.health.check([() => this.db.pingCheck('database')]);
