@@ -34,6 +34,7 @@ import { ClerkAuthMiddleware } from './auth/clerk-auth.middleware';
 
 // common
 import { RequestIdMiddleware } from './common/request-id.middleware';
+import { LoggingInterceptor } from './common/logging.interceptor';
 
 const ONE_MINUTE_IN_MS = 60000;
 const FIVE_THOUSAND = 5000;
@@ -70,6 +71,10 @@ const FIVE_THOUSAND = 5000;
     {
       provide: APP_FILTER,
       useClass: SentryGlobalFilter,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: LoggingInterceptor,
     },
     {
       provide: APP_INTERCEPTOR,
