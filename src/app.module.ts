@@ -32,6 +32,9 @@ import { GraphQLLoggerMiddleware } from './graphql/graphql-logger.middleware';
 // auth
 import { ClerkAuthMiddleware } from './auth/clerk-auth.middleware';
 
+// common
+import { RequestIdMiddleware } from './common/request-id.middleware';
+
 const ONE_MINUTE_IN_MS = 60000;
 const FIVE_THOUSAND = 5000;
 
@@ -76,6 +79,10 @@ const FIVE_THOUSAND = 5000;
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
+    // Apply RequestIdMiddleware to all routes first
+    consumer.apply(RequestIdMiddleware).forRoutes('*');
+
+    // Apply auth and logging middleware to GraphQL routes
     consumer
       .apply(ClerkAuthMiddleware, GraphQLLoggerMiddleware)
       .forRoutes('graphql');

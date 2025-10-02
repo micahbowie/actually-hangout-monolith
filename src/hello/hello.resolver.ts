@@ -1,5 +1,5 @@
 import { Query, Resolver } from '@nestjs/graphql';
-import { UseGuards } from '@nestjs/common';
+import { Logger, UseGuards } from '@nestjs/common';
 import { Hello } from './models/hello.model';
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -12,8 +12,11 @@ interface AuthObject {
 
 @Resolver(() => Hello)
 export class HelloResolver {
+  private readonly logger = new Logger(HelloResolver.name);
+
   @Query(() => Hello, { name: 'hello' })
   getHello(): Hello {
+    this.logger.log('saying hello');
     return {
       message: 'Hello World!',
     };

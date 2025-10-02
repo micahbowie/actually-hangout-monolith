@@ -1,4 +1,4 @@
-import { Injectable, NestMiddleware } from '@nestjs/common';
+import { Injectable, NestMiddleware, Logger } from '@nestjs/common';
 import { Request, Response, NextFunction } from 'express';
 
 interface GraphQLRequestBody {
@@ -9,6 +9,8 @@ interface GraphQLRequestBody {
 
 @Injectable()
 export class GraphQLLoggerMiddleware implements NestMiddleware {
+  private readonly logger = new Logger('GraphQL');
+
   use(req: Request, _res: Response, next: NextFunction) {
     const body = req.body as GraphQLRequestBody;
 
@@ -19,9 +21,6 @@ export class GraphQLLoggerMiddleware implements NestMiddleware {
       const variables = body.variables ? Object.keys(body.variables) : [];
 
       const logData = {
-        level: 'log',
-        timestamp: new Date().toISOString(),
-        context: 'GraphQL',
         operationType,
         operationName,
         variables,
@@ -29,7 +28,7 @@ export class GraphQLLoggerMiddleware implements NestMiddleware {
         method: req.method,
       };
 
-      console.log(JSON.stringify(logData));
+      this.logger.log(logData);
     }
 
     next();

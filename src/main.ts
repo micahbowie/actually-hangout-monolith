@@ -3,11 +3,11 @@ import 'dotenv/config';
 
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { ConsoleLogger } from '@nestjs/common';
+import { CustomLogger } from './common/custom-logger.service';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
-    logger: new ConsoleLogger({
+    logger: new CustomLogger({
       json: true,
     }),
     bufferLogs: true,
