@@ -3,6 +3,9 @@ FROM node:22-slim AS builder
 
 WORKDIR /app
 
+# Enable corepack and pnpm first
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
 # Copy package files
 COPY package*.json ./
 COPY pnpm-lock.yaml ./
@@ -10,15 +13,36 @@ COPY tsconfig*.json ./
 
 # Install dependencies including devDependencies for building
 # This layer will be cached if package files haven't changed
-RUN corepack enable pnpm && pnpm install --frozen-lockfile
+RUN pnpm install --frozen-lockfile
 
 # Copy only source code needed for build
 # Separate copy commands to maximize cache efficiency
 COPY src ./src
 COPY instrument.ts ./
 
+# Set Sentry environment variables (optional, will skip if not provided)
+ARG SENTRY_ORG
+ARG SENTRY_PROJECT
+ARG SENTRY_AUTH_TOKEN
+ENV SENTRY_ORG=$SENTRY_ORG
+ENV SENTRY_PROJECT=$SENTRY_PROJECT
+ENV SENTRY_AUTH_TOKEN=$SENTRY_AUTH_TOKEN
+
 # Build TypeScript to JavaScript
 RUN pnpm run build
+
+# Upload source maps to Sentry if auth token is provided
+RUN if [ -n "$SENTRY_AUTH_TOKEN" ]; then \
+      echo "Uploading source maps to Sentry..."; \
+      pnpm sentry:sourcemaps || echo "Warning: Sentry sourcemap upload failed"; \
+    else \
+      echo "Skipping Sentry sourcemap upload (no auth token provided)"; \
+    fi
+
+# Remove source maps from dist for security (they're already uploaded to Sentry)
+RUN if [ -n "$SENTRY_AUTH_TOKEN" ]; then \
+      find ./dist -name "*.map" -type f -delete; \
+    fi
 
 # Production stage
 FROM node:22-slim
@@ -32,7 +56,8 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/* && \
     groupadd -g 1001 nodejs && \
     useradd -u 1001 -g nodejs -m nodejs && \
-    corepack enable pnpm
+    corepack enable && \
+    corepack prepare pnpm@latest --activate
 
 # Copy package files
 COPY package*.json ./
@@ -41,7 +66,7 @@ COPY pnpm-lock.yaml ./
 # Install only production dependencies with cache mount for faster rebuilds
 # The cache mount persists pnpm cache between builds
 RUN --mount=type=cache,target=/root/.local/share/pnpm \
-    pnpm install --prod --frozen-lockfile
+    pnpm install --prod --frozen-lockfile --ignore-scripts
 
 # Copy built application from builder stage
 COPY --from=builder /app/dist ./dist

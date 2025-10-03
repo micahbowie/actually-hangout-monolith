@@ -7,6 +7,7 @@ import {
   ClerkSecretKey,
   temporalApiKey,
   ClerkWebhookSecret,
+  SentryAuthToken,
 } from "./secrets";
 
 const scalingConfig = () => {
@@ -97,6 +98,11 @@ const actuallyMonolith = new sst.aws.Service("ActuallyMonolithWeb", {
   image: {
     context: ".",
     dockerfile: "Dockerfile",
+    args:{
+      SENTRY_ORG: "good-for-nothing-tech",
+      SENTRY_PROJECT: "actually-monolith2",
+      SENTRY_AUTH_TOKEN: SentryAuthToken.value,
+    }
   },
   logging: {
     retention: "forever",

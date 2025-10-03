@@ -44,6 +44,10 @@ declare module "sst" {
       "type": "sst.sst.Secret"
       "value": string
     }
+    "SentryAuthToken": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
     "TemporalApiKey": {
       "type": "sst.sst.Secret"
       "value": string

@@ -6,7 +6,8 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
-    "build": "nest build && pnpm sentry:sourcemaps",
+    "build": "nest build",
+    "build:prod": "nest build && pnpm sentry:sourcemaps",
     "clean": "concurrently \"pnpm test\" \"pnpm lint\" \"pnpm format\"",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "lint": "eslint \"{src,apps,libs,test,infra}/**/*.ts\" --fix",
@@ -30,7 +31,7 @@
     "test:watch": "jest --watch",
     "typeorm": "typeorm-ts-node-commonjs",
     "destroy:staging": "sst remove --stage staging",
-    "deploy:staging": "sst deploy --stage staging",
+    "deploy:staging": "SST_BUILD_CONCURRENCY_CONTAINER=2 sst deploy --stage staging",
     "dev": "rm -rf dist && sst dev --stage dev",
     "deploy:dev": "sst deploy --stage dev",
     "unlock:dev": "sst unlock --stage dev",
