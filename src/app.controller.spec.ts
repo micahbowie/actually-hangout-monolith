@@ -15,8 +15,8 @@ describe('AppController', () => {
   });
 
   describe('root', () => {
-    it('returns "Hello World!"', () => {
-      expect(appController.getHello()).toBe('Hello World!');
+    it('returns "Actually Monolith"', () => {
+      expect(appController.getHello()).toBe('Actually Monolith');
     });
   });
 });

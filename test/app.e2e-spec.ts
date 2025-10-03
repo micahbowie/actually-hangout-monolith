@@ -21,7 +21,7 @@ describe('AppController (e2e)', () => {
     return request(app.getHttpServer())
       .get('/')
       .expect(200)
-      .expect('Hello World!');
+      .expect('Actually Monolith');
     /* eslint-enable @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
   });
 });

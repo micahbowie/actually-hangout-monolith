@@ -45,6 +45,9 @@ import { TemporalModule } from './temporal/temporal.module';
 
 const ONE_MINUTE_IN_MS = 60000;
 const FIVE_THOUSAND = 5000;
+const VALKEY_URL = isDev
+  ? 'redis://localhost:6379'
+  : `rediss://:${process.env.REDIS_PASSWORD}@${process.env.REDIS_HOST}:${process.env.REDIS_PORT}`;
 
 @Module({
   imports: [
@@ -62,7 +65,7 @@ const FIVE_THOUSAND = 5000;
               lruSize: FIVE_THOUSAND,
             }),
           }),
-          new KeyvValkey(process.env.VALKEY_URL || 'redis://localhost:6379'),
+          new KeyvValkey(VALKEY_URL),
         ],
       }),
     }),
