@@ -4,3 +4,10 @@ new sst.x.DevCommand("NgrokTunnel", {
     command: "pnpm ngrok",
   },
 });
+
+new sst.x.DevCommand("TemporalServer", {
+  dev: {
+    autostart: true,
+    command: "temporal server start-dev",
+  },
+});
