@@ -35,6 +35,7 @@
     "dev": "rm -rf dist && sst dev --stage dev",
     "deploy:dev": "sst deploy --stage dev",
     "unlock:dev": "sst unlock --stage dev",
+    "unlock:staging": "sst unlock --stage staging",
     "destroy:dev": "sst remove --stage dev",
     "deploy:prod": "sst deploy --stage production"
   },
