@@ -172,7 +172,9 @@ export class Suggestion {
   @JoinColumn({ name: 'user_id' })
   user: User;
 
-  @ManyToOne(() => Hangout, (hangout) => hangout.suggestions)
+  @ManyToOne(() => Hangout, (hangout) => hangout.suggestions, {
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'hangout_id' })
   hangout: Hangout;
 }

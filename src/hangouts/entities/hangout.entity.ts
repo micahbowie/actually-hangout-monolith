@@ -120,6 +120,10 @@ export class GroupDecisionSettings {
 
 @ObjectType()
 @Entity('hangouts')
+@Index(['userId', 'createdAt']) // Composite index for getHangouts default sorting
+@Index(['userId', 'status']) // Composite index for filtering by user and status
+@Index(['userId', 'collaborationMode']) // Composite index for filtering by collaboration mode
+@Index(['visibility', 'createdAt']) // Composite index for public hangout discovery
 export class Hangout {
   @Field(() => ID)
   @PrimaryGeneratedColumn()
@@ -132,10 +136,12 @@ export class Hangout {
 
   @Field(() => String)
   @Column({ name: 'title', type: 'varchar', length: 255 })
+  @Index() // Index for search performance
   title: string;
 
   @Field(() => String, { nullable: true })
   @Column({ name: 'description', type: 'text', nullable: true })
+  @Index() // Index for search performance
   description: string | null;
 
   @Field(() => String, { nullable: true })
@@ -184,6 +190,7 @@ export class Hangout {
 
   @Field(() => String, { nullable: true })
   @Column({ name: 'location_name', type: 'varchar', nullable: true })
+  @Index() // Index for search performance
   locationName: string | null;
 
   @Field(() => HangoutVisibility)

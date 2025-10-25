@@ -77,6 +77,8 @@ describe('HangoutsService', () => {
       create: jest.fn(),
       save: jest.fn(),
       findOne: jest.fn(),
+      delete: jest.fn(),
+      createQueryBuilder: jest.fn(),
       manager: {
         transaction: jest.fn(async (callback) => {
           return await callback(mockManager);
@@ -886,6 +888,291 @@ describe('HangoutsService', () => {
       const result = await service.getSuggestionsByHangoutId(999);
 
       expect(result).toEqual([]);
+    });
+  });
+
+  describe('getHangoutById with authorization', () => {
+    it('returns hangout for owner', async () => {
+      const hangout = { ...mockHangout, userId: 1, visibility: 'private' };
+      hangoutRepository.findOne.mockResolvedValue(hangout);
+
+      const result = await service.getHangoutById(1, 1);
+
+      expect(result).toEqual(hangout);
+    });
+
+    it('returns public hangout for non-owner', async () => {
+      const hangout = { ...mockHangout, userId: 2, visibility: 'public' };
+      hangoutRepository.findOne.mockResolvedValue(hangout);
+
+      const result = await service.getHangoutById(1, 1);
+
+      expect(result).toEqual(hangout);
+    });
+
+    it('returns null for private hangout when user is not owner', async () => {
+      const hangout = { ...mockHangout, userId: 2, visibility: 'private' };
+      hangoutRepository.findOne.mockResolvedValue(hangout);
+
+      const result = await service.getHangoutById(1, 1);
+
+      expect(result).toBeNull();
+    });
+
+    it('returns null for friends-only hangout when user is not owner', async () => {
+      const hangout = { ...mockHangout, userId: 2, visibility: 'friends' };
+      hangoutRepository.findOne.mockResolvedValue(hangout);
+
+      const result = await service.getHangoutById(1, 1);
+
+      expect(result).toBeNull();
+    });
+
+    it('returns public hangout when no userId provided', async () => {
+      const hangout = { ...mockHangout, visibility: 'public' };
+      hangoutRepository.findOne.mockResolvedValue(hangout);
+
+      const result = await service.getHangoutById(1);
+
+      expect(result).toEqual(hangout);
+    });
+
+    it('returns null for private hangout when no userId provided', async () => {
+      const hangout = { ...mockHangout, visibility: 'private' };
+      hangoutRepository.findOne.mockResolvedValue(hangout);
+
+      const result = await service.getHangoutById(1);
+
+      expect(result).toBeNull();
+    });
+
+    it('returns null when hangout not found', async () => {
+      hangoutRepository.findOne.mockResolvedValue(null);
+
+      const result = await service.getHangoutById(999, 1);
+
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('deleteHangout', () => {
+    it('successfully deletes a hangout owned by the user', async () => {
+      const hangoutId = 1;
+      const userId = 1;
+
+      hangoutRepository.findOne.mockResolvedValue({
+        ...mockHangout,
+        id: hangoutId,
+        userId,
+      });
+      hangoutRepository.delete.mockResolvedValue({ affected: 1, raw: [] });
+
+      const result = await service.deleteHangout(hangoutId, userId);
+
+      expect(result).toBe(true);
+      expect(hangoutRepository.findOne).toHaveBeenCalledWith({
+        where: { id: hangoutId },
+      });
+      expect(hangoutRepository.delete).toHaveBeenCalledWith({ id: hangoutId });
+    });
+
+    it('throws HangoutNotFoundError when hangout not found', async () => {
+      hangoutRepository.findOne.mockResolvedValue(null);
+
+      await expect(service.deleteHangout(999, 1)).rejects.toThrow(
+        'Hangout not found',
+      );
+    });
+
+    it('throws HangoutUnauthorizedError when user is not the creator', async () => {
+      hangoutRepository.findOne.mockResolvedValue({
+        ...mockHangout,
+        id: 1,
+        userId: 2, // Different user
+      });
+
+      await expect(service.deleteHangout(1, 1)).rejects.toThrow(
+        'Not authorized to delete this hangout',
+      );
+
+      expect(hangoutRepository.delete).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getHangouts', () => {
+    type MockQueryBuilder = {
+      where: jest.Mock;
+      andWhere: jest.Mock;
+      orderBy: jest.Mock;
+      skip: jest.Mock;
+      take: jest.Mock;
+      getCount: jest.Mock;
+      getMany: jest.Mock;
+    };
+
+    let queryBuilder: MockQueryBuilder;
+
+    beforeEach(() => {
+      queryBuilder = {
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        skip: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        getCount: jest.fn(),
+        getMany: jest.fn(),
+      };
+      hangoutRepository.createQueryBuilder.mockReturnValue(
+        queryBuilder as never,
+      );
+    });
+
+    it('returns hangouts for a user with default pagination', async () => {
+      const userId = 1;
+      const mockHangouts = [mockHangout];
+
+      queryBuilder.getCount.mockResolvedValue(1);
+      queryBuilder.getMany.mockResolvedValue(mockHangouts);
+
+      const result = await service.getHangouts(userId);
+
+      expect(result).toEqual({
+        hangouts: mockHangouts,
+        nextToken: undefined,
+        total: 1,
+      });
+      expect(queryBuilder.where).toHaveBeenCalledWith(
+        'hangout.user_id = :userId',
+        { userId },
+      );
+      expect(queryBuilder.orderBy).toHaveBeenCalledWith(
+        'hangout.created_at',
+        'DESC',
+      );
+      expect(queryBuilder.skip).toHaveBeenCalledWith(0);
+      expect(queryBuilder.take).toHaveBeenCalledWith(20);
+    });
+
+    it('applies search filter', async () => {
+      const userId = 1;
+      queryBuilder.getCount.mockResolvedValue(0);
+      queryBuilder.getMany.mockResolvedValue([]);
+
+      await service.getHangouts(userId, { search: 'test' });
+
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        '(hangout.title ILIKE :search OR hangout.description ILIKE :search OR hangout.location_name ILIKE :search)',
+        { search: '%test%' },
+      );
+    });
+
+    it('sanitizes search input to prevent SQL injection', async () => {
+      const userId = 1;
+      queryBuilder.getCount.mockResolvedValue(0);
+      queryBuilder.getMany.mockResolvedValue([]);
+
+      await service.getHangouts(userId, { search: 'test%_\\malicious' });
+
+      // Should escape special LIKE characters
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        '(hangout.title ILIKE :search OR hangout.description ILIKE :search OR hangout.location_name ILIKE :search)',
+        { search: '%test\\%\\_\\\\malicious%' },
+      );
+    });
+
+    it('applies date filters', async () => {
+      const userId = 1;
+      const startDate = '2024-01-01T00:00:00.000Z';
+      const endDate = '2024-12-31T23:59:59.999Z';
+
+      queryBuilder.getCount.mockResolvedValue(0);
+      queryBuilder.getMany.mockResolvedValue([]);
+
+      await service.getHangouts(userId, { startDate, endDate });
+
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'hangout.start_date_time >= :startDate',
+        { startDate: new Date(startDate) },
+      );
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'hangout.start_date_time <= :endDate',
+        { endDate: new Date(endDate) },
+      );
+    });
+
+    it('applies collaboration mode filter', async () => {
+      const userId = 1;
+      queryBuilder.getCount.mockResolvedValue(0);
+      queryBuilder.getMany.mockResolvedValue([]);
+
+      await service.getHangouts(userId, { collaborationMode: true });
+
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'hangout.collaboration_mode = :collaborationMode',
+        { collaborationMode: true },
+      );
+    });
+
+    it('applies status filter', async () => {
+      const userId = 1;
+      queryBuilder.getCount.mockResolvedValue(0);
+      queryBuilder.getMany.mockResolvedValue([]);
+
+      await service.getHangouts(userId, { status: HangoutStatus.PENDING });
+
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'hangout.status = :status',
+        { status: HangoutStatus.PENDING },
+      );
+    });
+
+    it('handles pagination with nextToken', async () => {
+      const userId = 1;
+      const mockHangouts = Array(20).fill(mockHangout);
+
+      queryBuilder.getCount.mockResolvedValue(40);
+      queryBuilder.getMany.mockResolvedValue(mockHangouts);
+
+      const result = await service.getHangouts(userId, {
+        limit: 20,
+        nextToken: '20',
+      });
+
+      expect(result).toEqual({
+        hangouts: mockHangouts,
+        nextToken: '40',
+        total: 40,
+      });
+      expect(queryBuilder.skip).toHaveBeenCalledWith(20);
+      expect(queryBuilder.take).toHaveBeenCalledWith(20);
+    });
+
+    it('returns no nextToken when no more results', async () => {
+      const userId = 1;
+      const mockHangouts = Array(10).fill(mockHangout);
+
+      queryBuilder.getCount.mockResolvedValue(10);
+      queryBuilder.getMany.mockResolvedValue(mockHangouts);
+
+      const result = await service.getHangouts(userId, { limit: 20 });
+
+      expect(result).toEqual({
+        hangouts: mockHangouts,
+        nextToken: undefined,
+        total: 10,
+      });
+    });
+
+    it('throws InvalidPaginationTokenError for invalid nextToken', async () => {
+      const userId = 1;
+
+      await expect(
+        service.getHangouts(userId, { nextToken: 'invalid' }),
+      ).rejects.toThrow('Invalid pagination token');
+
+      // QueryBuilder should not be called for invalid token
+      expect(queryBuilder.getCount).not.toHaveBeenCalled();
+      expect(queryBuilder.getMany).not.toHaveBeenCalled();
     });
   });
 });

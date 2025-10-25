@@ -10,6 +10,10 @@ import {
 import { User, UserMood } from '../users/entities/user.entity';
 import { CreateHangoutInput } from './dto/create-hangout.input';
 import type { AuthObject } from '../auth/types/auth.types';
+import {
+  HangoutNotFoundError,
+  HangoutUnauthorizedError,
+} from './errors/hangout.errors';
 
 // Mock uuid
 jest.mock('uuid', () => ({
@@ -278,25 +282,54 @@ describe('HangoutsResolver', () => {
   });
 
   describe('getHangout', () => {
-    it('returns a hangout by ID', async () => {
+    it('returns a hangout by ID with authorization', async () => {
+      usersService.getUserByClerkId.mockResolvedValue(mockUser);
       hangoutsService.getHangoutById.mockResolvedValue(mockHangout);
 
-      const result = await resolver.getHangout('1');
+      const result = await resolver.getHangout(mockAuth, '1');
 
       expect(result).toEqual(mockHangout);
-      expect(hangoutsService.getHangoutById).toHaveBeenCalledWith(1);
+      expect(usersService.getUserByClerkId).toHaveBeenCalledWith('user_123abc');
+      expect(hangoutsService.getHangoutById).toHaveBeenCalledWith(1, 1);
     });
 
     it('returns null when hangout not found', async () => {
+      usersService.getUserByClerkId.mockResolvedValue(mockUser);
       hangoutsService.getHangoutById.mockResolvedValue(null);
 
-      const result = await resolver.getHangout('999');
+      const result = await resolver.getHangout(mockAuth, '999');
 
       expect(result).toBeNull();
     });
 
-    it('throws error for invalid hangout ID', async () => {
-      await expect(resolver.getHangout('invalid')).rejects.toThrow(
+    it('throws UserNotFoundError when user not found', async () => {
+      usersService.getUserByClerkId.mockResolvedValue(null);
+
+      await expect(resolver.getHangout(mockAuth, '1')).rejects.toThrow(
+        'User not found',
+      );
+    });
+
+    it('throws InvalidHangoutIdError for invalid hangout ID', async () => {
+      usersService.getUserByClerkId.mockResolvedValue(mockUser);
+
+      await expect(resolver.getHangout(mockAuth, 'invalid')).rejects.toThrow(
+        'Invalid hangout ID',
+      );
+    });
+
+    it('throws InvalidHangoutIdError for zero ID', async () => {
+      usersService.getUserByClerkId.mockResolvedValue(mockUser);
+
+      await expect(resolver.getHangout(mockAuth, '0')).rejects.toThrow(
+        'Invalid hangout ID',
+      );
+    });
+
+    it('throws InvalidHangoutIdError for negative ID', async () => {
+      usersService.getUserByClerkId.mockResolvedValue(mockUser);
+
+      await expect(resolver.getHangout(mockAuth, '-1')).rejects.toThrow(
         'Invalid hangout ID',
       );
     });
@@ -436,6 +469,130 @@ describe('HangoutsResolver', () => {
         ],
       });
       expect(hangoutsService.getSuggestionsByHangoutId).toHaveBeenCalledWith(1);
+    });
+  });
+
+  describe('deleteHangout', () => {
+    it('successfully deletes a hangout', async () => {
+      usersService.getUserByClerkId.mockResolvedValue(mockUser);
+      hangoutsService.deleteHangout = jest.fn().mockResolvedValue(true);
+
+      const result = await resolver.deleteHangout(mockAuth, '1');
+
+      expect(result).toBe(true);
+      expect(usersService.getUserByClerkId).toHaveBeenCalledWith('user_123abc');
+      expect(hangoutsService.deleteHangout).toHaveBeenCalledWith(1, 1);
+    });
+
+    it('throws UserNotFoundError when user not found', async () => {
+      usersService.getUserByClerkId.mockResolvedValue(null);
+
+      await expect(resolver.deleteHangout(mockAuth, '1')).rejects.toThrow(
+        'User not found',
+      );
+    });
+
+    it('throws InvalidHangoutIdError for invalid hangout ID', async () => {
+      usersService.getUserByClerkId.mockResolvedValue(mockUser);
+
+      await expect(resolver.deleteHangout(mockAuth, 'invalid')).rejects.toThrow(
+        'Invalid hangout ID',
+      );
+    });
+
+    it('passes through HangoutNotFoundError', async () => {
+      usersService.getUserByClerkId.mockResolvedValue(mockUser);
+      hangoutsService.deleteHangout = jest
+        .fn()
+        .mockRejectedValue(new HangoutNotFoundError('Hangout not found'));
+
+      await expect(resolver.deleteHangout(mockAuth, '1')).rejects.toThrow(
+        'Hangout not found',
+      );
+    });
+
+    it('passes through HangoutUnauthorizedError', async () => {
+      usersService.getUserByClerkId.mockResolvedValue(mockUser);
+      hangoutsService.deleteHangout = jest
+        .fn()
+        .mockRejectedValue(
+          new HangoutUnauthorizedError('Not authorized to delete this hangout'),
+        );
+
+      await expect(resolver.deleteHangout(mockAuth, '1')).rejects.toThrow(
+        'Not authorized to delete this hangout',
+      );
+    });
+
+    it('returns generic error for unexpected failures', async () => {
+      usersService.getUserByClerkId.mockResolvedValue(mockUser);
+      hangoutsService.deleteHangout = jest
+        .fn()
+        .mockRejectedValue(new Error('Database error'));
+
+      await expect(resolver.deleteHangout(mockAuth, '1')).rejects.toThrow(
+        'Failed to delete hangout. Please try again.',
+      );
+    });
+  });
+
+  describe('getHangouts', () => {
+    it('successfully retrieves hangouts', async () => {
+      const mockResponse = {
+        hangouts: [mockHangout],
+        nextToken: undefined,
+        total: 1,
+      };
+
+      usersService.getUserByClerkId.mockResolvedValue(mockUser);
+      hangoutsService.getHangouts = jest.fn().mockResolvedValue(mockResponse);
+
+      const result = await resolver.getHangouts(mockAuth);
+
+      expect(result).toEqual(mockResponse);
+      expect(usersService.getUserByClerkId).toHaveBeenCalledWith('user_123abc');
+      expect(hangoutsService.getHangouts).toHaveBeenCalledWith(1, undefined);
+    });
+
+    it('retrieves hangouts with filters', async () => {
+      const mockResponse = {
+        hangouts: [mockHangout],
+        nextToken: undefined,
+        total: 1,
+      };
+
+      const input = {
+        search: 'test',
+        collaborationMode: true,
+        limit: 10,
+      };
+
+      usersService.getUserByClerkId.mockResolvedValue(mockUser);
+      hangoutsService.getHangouts = jest.fn().mockResolvedValue(mockResponse);
+
+      const result = await resolver.getHangouts(mockAuth, input);
+
+      expect(result).toEqual(mockResponse);
+      expect(hangoutsService.getHangouts).toHaveBeenCalledWith(1, input);
+    });
+
+    it('throws error when user not found', async () => {
+      usersService.getUserByClerkId.mockResolvedValue(null);
+
+      await expect(resolver.getHangouts(mockAuth)).rejects.toThrow(
+        'User not found',
+      );
+    });
+
+    it('returns generic error for service failures', async () => {
+      usersService.getUserByClerkId.mockResolvedValue(mockUser);
+      hangoutsService.getHangouts = jest
+        .fn()
+        .mockRejectedValue(new Error('Database error'));
+
+      await expect(resolver.getHangouts(mockAuth)).rejects.toThrow(
+        'Failed to get hangouts. Please try again.',
+      );
     });
   });
 });

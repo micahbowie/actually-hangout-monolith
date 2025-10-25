@@ -3,17 +3,39 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
 import * as Sentry from '@sentry/nestjs';
-import { Hangout, HangoutStatus } from './entities/hangout.entity';
+import {
+  Hangout,
+  HangoutStatus,
+  HangoutVisibility,
+} from './entities/hangout.entity';
 import {
   Suggestion,
   SuggestionType,
   SuggestionStatus,
 } from './entities/suggestion.entity';
 import { CreateHangoutInput } from './dto/create-hangout.input';
+import {
+  HangoutNotFoundError,
+  HangoutUnauthorizedError,
+  InvalidPaginationTokenError,
+} from './errors/hangout.errors';
 
 @Injectable()
 export class HangoutsService {
   private readonly logger = new Logger(HangoutsService.name);
+  private readonly DEFAULT_PAGE_SIZE = 20;
+
+  /**
+   * Sanitize search input to prevent SQL injection and ILIKE pattern abuse
+   * Escapes special SQL LIKE characters: %, _, \
+   */
+  private sanitizeSearchInput(input: string): string {
+    return input
+      .replace(/\\/g, '\\\\') // Escape backslashes first
+      .replace(/%/g, '\\%') // Escape % wildcard
+      .replace(/_/g, '\\_') // Escape _ wildcard
+      .trim();
+  }
 
   constructor(
     @InjectRepository(Hangout)
@@ -276,12 +298,39 @@ export class HangoutsService {
   }
 
   /**
-   * Find a hangout by ID
+   * Find a hangout by ID with visibility authorization
+   * Only returns the hangout if the user is authorized to view it based on visibility settings
    */
-  async getHangoutById(id: number): Promise<Hangout | null> {
-    return this.hangoutRepository.findOne({
+  async getHangoutById(id: number, userId?: number): Promise<Hangout | null> {
+    const hangout = await this.hangoutRepository.findOne({
       where: { id },
     });
+
+    if (!hangout) {
+      return null;
+    }
+
+    // If no userId provided, only return public hangouts
+    if (!userId) {
+      return hangout.visibility === HangoutVisibility.PUBLIC ? hangout : null;
+    }
+
+    // Owner can always see their own hangout
+    if (hangout.userId === userId) {
+      return hangout;
+    }
+
+    // For non-owners, check visibility
+    // PUBLIC: anyone can see
+    // PRIVATE: only owner can see (already checked above)
+    // FRIENDS: would need friendship check (not implemented yet, so deny for now)
+    if (hangout.visibility === HangoutVisibility.PUBLIC) {
+      return hangout;
+    }
+
+    // TODO: Add friendship check for FRIENDS visibility
+    // For now, deny access to private and friends-only hangouts
+    return null;
   }
 
   /**
@@ -301,5 +350,155 @@ export class HangoutsService {
       where: { hangoutId },
       order: { createdAt: 'DESC' },
     });
+  }
+
+  /**
+   * Delete a hangout
+   * Only the creator can delete a hangout
+   */
+  async deleteHangout(id: number, userId: number): Promise<boolean> {
+    this.logger.debug({
+      message: 'Deleting hangout',
+      hangoutId: id,
+      userId,
+    });
+
+    // Find the hangout and verify ownership
+    const hangout = await this.hangoutRepository.findOne({
+      where: { id },
+    });
+
+    if (!hangout) {
+      throw new HangoutNotFoundError('Hangout not found');
+    }
+
+    // Verify user is the creator
+    if (hangout.userId !== userId) {
+      throw new HangoutUnauthorizedError(
+        'Not authorized to delete this hangout',
+      );
+    }
+
+    // Delete the hangout (cascade configuration handles related suggestions)
+    await this.hangoutRepository.delete({ id });
+
+    this.logger.log({
+      message: 'Hangout deleted successfully',
+      hangoutId: id,
+      userId,
+    });
+
+    return true;
+  }
+
+  /**
+   * Get hangouts with optional filtering and pagination
+   * Currently only returns hangouts owned by the user
+   *
+   * Note: The count query executes before pagination, which may impact
+   * performance with large datasets. Consider making total optional or
+   * using cursor-based pagination for better performance at scale.
+   */
+  async getHangouts(
+    userId: number,
+    filters: {
+      search?: string;
+      startDate?: string;
+      endDate?: string;
+      collaborationMode?: boolean;
+      status?: HangoutStatus;
+      limit?: number;
+      nextToken?: string;
+    } = {},
+  ): Promise<{ hangouts: Hangout[]; nextToken?: string; total: number }> {
+    this.logger.debug({
+      message: 'Getting hangouts',
+      userId,
+      filters,
+    });
+
+    const limit = filters.limit ?? this.DEFAULT_PAGE_SIZE;
+    const offset = filters.nextToken ? parseInt(filters.nextToken, 10) : 0;
+
+    // Validate nextToken after parsing
+    if (filters.nextToken && isNaN(offset)) {
+      throw new InvalidPaginationTokenError('Invalid pagination token');
+    }
+
+    // Build query
+    const queryBuilder = this.hangoutRepository
+      .createQueryBuilder('hangout')
+      .where('hangout.user_id = :userId', { userId })
+      .orderBy('hangout.created_at', 'DESC');
+
+    // Apply search filter with sanitization
+    if (filters.search) {
+      const sanitizedSearch = this.sanitizeSearchInput(filters.search);
+      queryBuilder.andWhere(
+        '(hangout.title ILIKE :search OR hangout.description ILIKE :search OR hangout.location_name ILIKE :search)',
+        { search: `%${sanitizedSearch}%` },
+      );
+    }
+
+    // Apply date filters
+    if (filters.startDate) {
+      const startDate = new Date(filters.startDate);
+      if (!isNaN(startDate.getTime())) {
+        queryBuilder.andWhere('hangout.start_date_time >= :startDate', {
+          startDate,
+        });
+      }
+    }
+
+    if (filters.endDate) {
+      const endDate = new Date(filters.endDate);
+      if (!isNaN(endDate.getTime())) {
+        queryBuilder.andWhere('hangout.start_date_time <= :endDate', {
+          endDate,
+        });
+      }
+    }
+
+    // Apply collaboration mode filter
+    if (filters.collaborationMode !== undefined) {
+      queryBuilder.andWhere('hangout.collaboration_mode = :collaborationMode', {
+        collaborationMode: filters.collaborationMode,
+      });
+    }
+
+    // Apply status filter
+    if (filters.status) {
+      queryBuilder.andWhere('hangout.status = :status', {
+        status: filters.status,
+      });
+    }
+
+    // Get total count before pagination
+    const total = await queryBuilder.getCount();
+
+    // Apply pagination
+    queryBuilder.skip(offset).take(limit);
+
+    // Execute query
+    const hangouts = await queryBuilder.getMany();
+
+    // Calculate next token
+    const nextToken =
+      hangouts.length === limit ? String(offset + limit) : undefined;
+
+    this.logger.log({
+      message: 'Hangouts retrieved successfully',
+      userId,
+      count: hangouts.length,
+      total,
+      nextToken,
+      filters,
+    });
+
+    return {
+      hangouts,
+      nextToken,
+      total,
+    };
   }
 }

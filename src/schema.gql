@@ -43,6 +43,16 @@ input DateTimeSuggestionInput {
   dateTime: String!
 }
 
+input GetHangoutsInput {
+  collaborationMode: Boolean
+  endDate: String
+  limit: Float
+  nextToken: String
+  search: String
+  startDate: String
+  status: HangoutStatus
+}
+
 type GroupDecisionDeadlines {
   suggestion: String!
   voting: String!
@@ -196,6 +206,12 @@ enum HangoutVisibility {
   PUBLIC
 }
 
+type HangoutsResponse {
+  hangouts: [Hangout!]!
+  nextToken: String
+  total: Float!
+}
+
 type Hello {
   message: String!
 }
@@ -220,6 +236,9 @@ type Mutation {
   """Creates a new hangout with optional group decision settings"""
   createHangout(input: CreateHangoutInput!): Hangout!
 
+  """Delete a hangout (only creator can delete)"""
+  deleteHangout(id: String!): Boolean!
+
   """
   Updates the push notification token for the authenticated user. Accepts Expo, FCM, and APNs token formats.
   """
@@ -232,8 +251,11 @@ input PushTokenInput {
 }
 
 type Query {
-  """Get a hangout by ID"""
+  """Get a hangout by ID with visibility authorization"""
   hangout(id: String!): Hangout
+
+  """Get hangouts with filtering and pagination"""
+  hangouts(input: GetHangoutsInput): HangoutsResponse!
   hello: Hello!
   helloAuth: Hello!
 }
