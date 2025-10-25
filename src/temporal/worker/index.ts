@@ -3,6 +3,7 @@ import '../../../instrument';
 import 'dotenv/config';
 import { Worker, NativeConnection } from '@temporalio/worker';
 import { DataSource } from 'typeorm';
+import { Logger } from '@nestjs/common';
 import { join } from 'path';
 import * as activities from '../activities';
 import { getTemporalConnection } from '../temporal.config';
@@ -10,6 +11,9 @@ import { databaseConfig } from '../../db/config';
 import { User } from '../../users/entities/user.entity';
 import { UsersService } from '../../users/users.service';
 import { setUsersService } from '../activities/user-sync.activity';
+import { setUsersServiceForPushToken } from '../activities/push-token.activity';
+
+const logger = new Logger('TemporalWorker');
 
 async function runWorker() {
   let connection: NativeConnection | undefined;
@@ -17,13 +21,13 @@ async function runWorker() {
 
   try {
     // Initialize database connection
-    console.log('Initializing database connection...');
+    logger.log('Initializing database connection...');
     dataSource = new DataSource({
       ...databaseConfig,
       entities: [User],
     });
     await dataSource.initialize();
-    console.log('Database connected');
+    logger.log('Database connected');
 
     // Create UsersService instance
     const userRepository = dataSource.getRepository(User);
@@ -31,7 +35,8 @@ async function runWorker() {
 
     // Inject UsersService into activities
     setUsersService(usersService);
-    console.log('UsersService initialized for activities');
+    setUsersServiceForPushToken(usersService);
+    logger.log('UsersService initialized for activities');
 
     // Connect to Temporal
     connection = await NativeConnection.connect({
@@ -46,21 +51,21 @@ async function runWorker() {
       taskQueue: 'actually-core-logic',
     });
 
-    console.log('Temporal worker started successfully');
+    logger.log('Temporal worker started successfully');
     await worker.run();
   } finally {
     if (connection) {
       await connection.close();
-      console.log('Temporal connection closed');
+      logger.log('Temporal connection closed');
     }
     if (dataSource && dataSource.isInitialized) {
       await dataSource.destroy();
-      console.log('Database connection closed');
+      logger.log('Database connection closed');
     }
   }
 }
 
 runWorker().catch((err) => {
-  console.error('Failed to start Temporal worker:', err);
+  logger.error('Failed to start Temporal worker:', err);
   process.exit(1);
 });

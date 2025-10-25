@@ -4,15 +4,9 @@ import { v4 as uuidv4 } from 'uuid';
 import { Hello } from './models/hello.model';
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import type { AuthObject } from '../auth/types/auth.types';
 import { TemporalService } from '../temporal/temporal.service';
 import { helloWorkflow } from '../temporal/workflows';
-
-interface AuthObject {
-  userId: string;
-  sessionId?: string;
-  orgId?: string;
-}
-
 class TimeoutError extends Error {
   constructor(message: string) {
     super(message);

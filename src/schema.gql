@@ -6,6 +6,18 @@ type Hello {
   message: String!
 }
 
+type Mutation {
+  """
+  Updates the push notification token for the authenticated user. Accepts Expo, FCM, and APNs token formats.
+  """
+  updateUserPushToken(input: PushTokenInput!): Boolean!
+}
+
+input PushTokenInput {
+  """The push notification token from the device"""
+  token: String!
+}
+
 type Query {
   hello: Hello!
   helloAuth: Hello!

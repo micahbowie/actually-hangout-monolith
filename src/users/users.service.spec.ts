@@ -22,6 +22,7 @@ jest.mock('phone', () => ({
 describe('UsersService', () => {
   let service: UsersService;
   let repository: jest.Mocked<Repository<User>>;
+  let mockManager: any;
 
   const mockUser: User = {
     id: 1,
@@ -83,11 +84,24 @@ describe('UsersService', () => {
   };
 
   beforeEach(async () => {
+    // Mock EntityManager for transactions
+    mockManager = {
+      findOne: jest.fn(),
+      save: jest.fn(),
+    };
+
     const mockRepository = {
       create: jest.fn(),
       save: jest.fn(),
       findOne: jest.fn(),
       remove: jest.fn(),
+      manager: {
+        transaction: jest.fn(async (callback) => {
+          // Execute the transaction callback with the mock manager
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call
+          return await callback(mockManager);
+        }),
+      },
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -296,4 +310,194 @@ describe('UsersService', () => {
       expect(result).toBeNull();
     });
   });
+
+  /* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
+  describe('updatePushToken', () => {
+    it('adds a new push token to an empty tokens array', async () => {
+      const pushToken = 'ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]';
+      mockManager.findOne.mockResolvedValue(mockUser);
+      mockManager.save.mockResolvedValue({
+        ...mockUser,
+        pushTokens: [pushToken],
+      });
+
+      const result = await service.updatePushToken('user_123abc', pushToken);
+
+      expect(result).toBe(true);
+      expect(mockManager.findOne).toHaveBeenCalledWith(User, {
+        where: { clerkId: 'user_123abc' },
+        lock: { mode: 'pessimistic_write' },
+      });
+      expect(mockManager.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          pushTokens: [pushToken],
+        }),
+      );
+    });
+
+    it('adds a new push token to existing tokens', async () => {
+      const existingToken = 'ExponentPushToken[existing]';
+      const newToken = 'ExponentPushToken[new]';
+      const userWithToken = {
+        ...mockUser,
+        pushTokens: [existingToken],
+      };
+
+      mockManager.findOne.mockResolvedValue(userWithToken);
+      mockManager.save.mockResolvedValue({
+        ...userWithToken,
+        pushTokens: [existingToken, newToken],
+      });
+
+      const result = await service.updatePushToken('user_123abc', newToken);
+
+      expect(result).toBe(true);
+      expect(mockManager.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          pushTokens: [existingToken, newToken],
+        }),
+      );
+    });
+
+    it('returns true without saving when token already exists (idempotent)', async () => {
+      const existingToken = 'ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]';
+      const userWithToken = {
+        ...mockUser,
+        pushTokens: [existingToken],
+      };
+
+      mockManager.findOne.mockResolvedValue(userWithToken);
+
+      const result = await service.updatePushToken(
+        'user_123abc',
+        existingToken,
+      );
+
+      expect(result).toBe(true);
+      expect(mockManager.findOne).toHaveBeenCalledWith(User, {
+        where: { clerkId: 'user_123abc' },
+        lock: { mode: 'pessimistic_write' },
+      });
+      expect(mockManager.save).not.toHaveBeenCalled();
+    });
+
+    it('returns false when push token is too short', async () => {
+      const shortToken = 'short';
+
+      const result = await service.updatePushToken('user_123abc', shortToken);
+
+      expect(result).toBe(false);
+      expect(repository.findOne).not.toHaveBeenCalled();
+      expect(repository.save).not.toHaveBeenCalled();
+    });
+
+    it('returns false when push token is empty', async () => {
+      const result = await service.updatePushToken('user_123abc', '');
+
+      expect(result).toBe(false);
+      expect(repository.findOne).not.toHaveBeenCalled();
+      expect(repository.save).not.toHaveBeenCalled();
+    });
+
+    it('returns false when user is not found', async () => {
+      const pushToken = 'ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]';
+      mockManager.findOne.mockResolvedValue(null);
+
+      const result = await service.updatePushToken(
+        'nonexistent_clerk_id',
+        pushToken,
+      );
+
+      expect(result).toBe(false);
+      expect(mockManager.findOne).toHaveBeenCalledWith(User, {
+        where: { clerkId: 'nonexistent_clerk_id' },
+        lock: { mode: 'pessimistic_write' },
+      });
+      expect(mockManager.save).not.toHaveBeenCalled();
+    });
+
+    it('updates the updatedAt timestamp when adding a new token', async () => {
+      const pushToken = 'ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]';
+      const originalUpdatedAt = new Date('2024-01-01');
+      const userWithOldTimestamp = {
+        ...mockUser,
+        updatedAt: originalUpdatedAt,
+        pushTokens: [], // Empty array so token will be added
+      };
+
+      mockManager.findOne.mockResolvedValue(userWithOldTimestamp);
+      mockManager.save.mockImplementation((user: User) =>
+        Promise.resolve(user),
+      );
+
+      await service.updatePushToken('user_123abc', pushToken);
+
+      expect(mockManager.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          updatedAt: expect.any(Date),
+        }),
+      );
+
+      const savedUser = mockManager.save.mock.calls[0][0] as User;
+      expect(savedUser.updatedAt.getTime()).toBeGreaterThan(
+        originalUpdatedAt.getTime(),
+      );
+    });
+
+    it('returns false when token format is unknown', async () => {
+      const invalidToken = 'unknown_format_token_1234567890';
+
+      const result = await service.updatePushToken('user_123abc', invalidToken);
+
+      expect(result).toBe(false);
+      expect(repository.findOne).not.toHaveBeenCalled();
+      expect(repository.save).not.toHaveBeenCalled();
+    });
+
+    it('returns false when maximum tokens limit is reached', async () => {
+      const pushToken = 'ExponentPushToken[new_token]';
+      const userWithMaxTokens = {
+        ...mockUser,
+        pushTokens: Array(10).fill('ExponentPushToken[existing]'),
+      };
+
+      mockManager.findOne.mockResolvedValue(userWithMaxTokens);
+
+      const result = await service.updatePushToken('user_123abc', pushToken);
+
+      expect(result).toBe(false);
+      expect(mockManager.findOne).toHaveBeenCalled();
+      expect(mockManager.save).not.toHaveBeenCalled();
+    });
+
+    it('accepts FCM token format', async () => {
+      const fcmToken = 'a'.repeat(152);
+      mockManager.findOne.mockResolvedValue(mockUser);
+      mockManager.save.mockResolvedValue({
+        ...mockUser,
+        pushTokens: [fcmToken],
+      });
+
+      const result = await service.updatePushToken('user_123abc', fcmToken);
+
+      expect(result).toBe(true);
+      expect(mockManager.save).toHaveBeenCalled();
+    });
+
+    it('accepts APNs token format', async () => {
+      const apnsToken = 'a1b2c3d4e5f67890'.repeat(4);
+      mockManager.findOne.mockResolvedValue(mockUser);
+      mockManager.save.mockResolvedValue({
+        ...mockUser,
+        pushTokens: [apnsToken],
+      });
+
+      const result = await service.updatePushToken('user_123abc', apnsToken);
+
+      expect(result).toBe(true);
+      expect(mockManager.save).toHaveBeenCalled();
+    });
+  });
+  /* eslint-enable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
 });

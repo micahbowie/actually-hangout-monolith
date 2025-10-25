@@ -3,8 +3,11 @@
  * These activities handle database mutations and async processing of user lifecycle events
  */
 
+import { Logger } from '@nestjs/common';
 import { UsersService } from '../../users/users.service';
 import type { ClerkUserData } from '../../users/types/clerk-webhook.types';
+
+const logger = new Logger('UserSyncActivity');
 
 // UsersService instance will be injected by the worker
 let usersService: UsersService;
@@ -36,7 +39,7 @@ type SessionCreatedActivityData = {
 export async function createUserActivity(
   clerkUserData: ClerkUserData,
 ): Promise<void> {
-  console.log(`[Activity] Creating user: ${clerkUserData.id}`);
+  logger.log(`[Activity] Creating user: ${clerkUserData.id}`);
 
   if (!usersService) {
     throw new Error('UsersService not initialized in activity context');
@@ -45,7 +48,7 @@ export async function createUserActivity(
   // Create user in database
   const user = await usersService.createUser(clerkUserData);
 
-  console.log(`[Activity] User created: ${user.id}`);
+  logger.log(`[Activity] User created: ${user.id}`);
 
   // Future: Add additional business logic like:
   // - await sendWelcomeEmail(user.email);
@@ -57,7 +60,7 @@ export async function createUserActivity(
 export async function updateUserActivity(
   data: UpdateUserActivityData,
 ): Promise<void> {
-  console.log(`[Activity] Updating user: ${data.clerkId}`);
+  logger.log(`[Activity] Updating user: ${data.clerkId}`);
 
   if (!usersService) {
     throw new Error('UsersService not initialized in activity context');
@@ -67,11 +70,11 @@ export async function updateUserActivity(
   const user = await usersService.updateUser(data.clerkId, data.updates);
 
   if (!user) {
-    console.warn(`[Activity] User not found: ${data.clerkId}`);
+    logger.warn(`[Activity] User not found: ${data.clerkId}`);
     return;
   }
 
-  console.log(`[Activity] User updated: ${user.id}`);
+  logger.log(`[Activity] User updated: ${user.id}`);
 
   // Future: Add additional business logic like:
   // - await syncToExternalSystems(user);
@@ -81,7 +84,7 @@ export async function updateUserActivity(
 }
 
 export async function deleteUserActivity(clerkId: string): Promise<void> {
-  console.log(`[Activity] Deleting user: ${clerkId}`);
+  logger.log(`[Activity] Deleting user: ${clerkId}`);
 
   if (!usersService) {
     throw new Error('UsersService not initialized in activity context');
@@ -90,7 +93,7 @@ export async function deleteUserActivity(clerkId: string): Promise<void> {
   // Get user before deletion for any cleanup operations
   const user = await usersService.getUserByClerkId(clerkId);
   if (!user) {
-    console.warn(`[Activity] User not found for deletion: ${clerkId}`);
+    logger.warn(`[Activity] User not found for deletion: ${clerkId}`);
     return;
   }
 
@@ -100,7 +103,7 @@ export async function deleteUserActivity(clerkId: string): Promise<void> {
   // Delete user from database (hard delete with cascade)
   await usersService.deleteUser(clerkId);
 
-  console.log(`[Activity] User deleted: ${userId}`);
+  logger.log(`[Activity] User deleted: ${userId}`);
 
   // Future: Add cleanup logic like:
   // - await removeFromExternalSystems(userUuid);
@@ -116,7 +119,7 @@ export async function deleteUserActivity(clerkId: string): Promise<void> {
 export async function updateUserSessionActivity(
   data: SessionCreatedActivityData,
 ): Promise<void> {
-  console.log(`[Activity] Updating user session: ${data.clerkId}`);
+  logger.log(`[Activity] Updating user session: ${data.clerkId}`);
 
   if (!usersService) {
     throw new Error('UsersService not initialized in activity context');
@@ -129,13 +132,13 @@ export async function updateUserSessionActivity(
   });
 
   if (!user) {
-    console.error(
+    logger.error(
       `[Activity] User not found for session update: ${data.clerkId}`,
     );
     return;
   }
 
-  console.log(`[Activity] User session updated: ${user.id}`);
+  logger.log(`[Activity] User session updated: ${user.id}`);
 
   // Future: Add additional business logic like:
   // - await trackLoginAnalytics(user.id, data.lastActiveAt);

@@ -1,11 +1,16 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import * as Sentry from '@sentry/nestjs';
 import { User, UserMood } from './entities/user.entity';
 import { ClerkUserData } from './types/clerk-webhook.types';
 import { phone } from 'phone';
 import { v4 as uuidv4 } from 'uuid';
 import * as crypto from 'crypto';
+import {
+  validatePushToken,
+  MAX_TOKENS_PER_USER,
+} from './utils/push-token-validator';
 
 type UpdateUserData = {
   firstName?: string;
@@ -221,6 +226,111 @@ export class UsersService {
   async getUserByUuid(uuid: string): Promise<User | null> {
     return this.userRepository.findOne({
       where: { uuid },
+    });
+  }
+
+  /**
+   * Find a user by numeric ID
+   */
+  async getUserById(id: number): Promise<User | null> {
+    return this.userRepository.findOne({
+      where: { id },
+    });
+  }
+
+  /**
+   * Update push token for a user
+   * This method is idempotent - calling it multiple times with the same token will not create duplicates
+   */
+  async updatePushToken(userId: string, pushToken: string): Promise<boolean> {
+    this.logger.log({
+      message: 'Updating push token',
+      userId,
+      tokenLength: pushToken.length,
+    });
+
+    // Validate push token format
+    const validation = validatePushToken(pushToken);
+    if (!validation.isValid) {
+      this.logger.error({
+        message: 'Invalid push token format',
+        userId,
+        tokenLength: pushToken?.length || 0,
+        reason: validation.reason,
+        format: validation.format,
+      });
+
+      // Capture validation failures in Sentry
+      Sentry.captureMessage('Invalid push token format', {
+        level: 'warning',
+        extra: {
+          userId,
+          tokenLength: pushToken?.length || 0,
+          reason: validation.reason,
+          format: validation.format,
+        },
+      });
+
+      return false;
+    }
+
+    // Use transaction with pessimistic locking to prevent race conditions
+    return await this.userRepository.manager.transaction(async (manager) => {
+      // Find user with pessimistic write lock
+      const user = await manager.findOne(User, {
+        where: { clerkId: userId },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!user) {
+        this.logger.error({
+          message: 'User not found',
+          userId,
+        });
+        return false;
+      }
+
+      // Check if token already exists (idempotency)
+      const existingTokens = user.pushTokens || [];
+      if (existingTokens.includes(pushToken)) {
+        this.logger.log({
+          message: 'Push token already exists, skipping update',
+          userId,
+          userIdNumeric: user.id,
+        });
+        return true;
+      }
+
+      // Check maximum tokens per user
+      if (existingTokens.length >= MAX_TOKENS_PER_USER) {
+        this.logger.error({
+          message: 'Maximum push tokens per user exceeded',
+          userId,
+          userIdNumeric: user.id,
+          currentCount: existingTokens.length,
+          maxAllowed: MAX_TOKENS_PER_USER,
+        });
+        return false;
+      }
+
+      // Add new token to the list
+      const updatedTokens = [...existingTokens, pushToken];
+
+      // Update user with new push tokens
+      user.pushTokens = updatedTokens;
+      user.updatedAt = new Date();
+
+      await manager.save(user);
+
+      this.logger.log({
+        message: 'Push token updated successfully',
+        userId,
+        userIdNumeric: user.id,
+        totalTokens: updatedTokens.length,
+        tokenFormat: validation.format,
+      });
+
+      return true;
     });
   }
 }
