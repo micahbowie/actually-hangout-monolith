@@ -9,6 +9,7 @@
     "build": "nest build",
     "build:prod": "nest build && pnpm sentry:sourcemaps",
     "clean": "concurrently \"pnpm test\" \"pnpm lint\" \"pnpm format\"",
+    "check": "concurrently \"pnpm test\" \"pnpm lint\" \"pnpm format\"",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "lint": "eslint \"{src,apps,libs,test,infra}/**/*.ts\" --fix",
     "migration:create": "typeorm-ts-node-commonjs migration:create",
@@ -68,9 +69,11 @@
     "ioredis": "^5.8.0",
     "keyv": "^5.5.3",
     "pg": "^8.16.3",
+    "phone": "^3.1.67",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "sst": "3.17.14",
+    "svix": "^1.77.0",
     "typeorm": "^0.3.27",
     "typeorm-naming-strategies": "^4.1.0",
     "uuid": "^13.0.0"
@@ -123,7 +126,7 @@
       "^.+\\.(t|j)s$": "ts-jest"
     },
     "transformIgnorePatterns": [
-      "node_modules/(?!uuid)"
+      "node_modules/(?!uuid|phone)"
     ]
   },
   "lint-staged": {

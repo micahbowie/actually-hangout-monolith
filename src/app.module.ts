@@ -43,6 +43,12 @@ import { LoggingInterceptor } from './common/logging.interceptor';
 // temporal
 import { TemporalModule } from './temporal/temporal.module';
 
+// users
+import { UsersModule } from './users/users.module';
+
+// webhooks
+import { WebhooksModule } from './webhooks/webhooks.module';
+
 const ONE_MINUTE_IN_MS = 60000;
 const FIVE_THOUSAND = 5000;
 const VALKEY_URL = isDev
@@ -54,6 +60,8 @@ const VALKEY_URL = isDev
     SentryModule.forRoot(),
     TypeOrmModule.forRoot(getDatabaseConfig()),
     TemporalModule,
+    UsersModule,
+    WebhooksModule,
     HealthModule,
     CacheModule.registerAsync({
       isGlobal: true,

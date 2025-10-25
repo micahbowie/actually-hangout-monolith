@@ -102,7 +102,7 @@ describe('HealthController', () => {
       const result = await controller.check();
 
       // Assert
-      // eslint-disable-next-line @typescript-eslint/unbound-method
+
       expect(healthCheckService.check).toHaveBeenCalledWith([
         expect.any(Function),
         expect.any(Function),
@@ -138,7 +138,7 @@ describe('HealthController', () => {
       const result = await controller.check();
 
       // Assert
-      // eslint-disable-next-line @typescript-eslint/unbound-method
+
       expect(healthCheckService.check).toHaveBeenCalledWith([
         expect.any(Function),
         expect.any(Function),
@@ -162,13 +162,13 @@ describe('HealthController', () => {
       await controller.check();
 
       // Assert
-      // eslint-disable-next-line @typescript-eslint/unbound-method
+
       expect(healthCheckService.check).toHaveBeenCalledTimes(1);
       const checkFunction = healthCheckService.check.mock.calls[0][0][0];
 
       // Execute the function passed to health.check to verify it calls pingCheck
       await checkFunction();
-      // eslint-disable-next-line @typescript-eslint/unbound-method
+
       expect(typeOrmHealthIndicator.pingCheck).toHaveBeenCalledWith('database');
     });
   });
