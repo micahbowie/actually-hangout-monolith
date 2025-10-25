@@ -2,11 +2,224 @@
 # THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
 # ------------------------------------------------------
 
+type ActivitySuggestion {
+  activity: String!
+  createdAt: String!
+  id: ID!
+  note: String
+  suggestedBy: ID!
+  updatedAt: String!
+}
+
+input ActivitySuggestionInput {
+  activity: String!
+  note: String
+}
+
+input CreateHangoutInput {
+  activity: String
+  collaborationMode: Boolean!
+  date: String
+  description: String
+  groupDecision: GroupDecisionInput
+  groupDecisionSuggestions: GroupDecisionSuggestionsInput
+  location: String
+  locationDetails: HangoutLocationDetailsInput
+  title: String!
+  visibility: HangoutVisibility!
+}
+
+type DateTimeSuggestion {
+  availabilityType: HangoutAvailabilityType!
+  createdAt: String!
+  dateTime: String!
+  id: ID!
+  suggestedBy: ID!
+  updatedAt: String!
+}
+
+input DateTimeSuggestionInput {
+  availabilityType: HangoutAvailabilityType!
+  dateTime: String!
+}
+
+type GroupDecisionDeadlines {
+  suggestion: String!
+  voting: String!
+}
+
+input GroupDecisionDeadlinesInput {
+  suggestion: String!
+  voting: String!
+}
+
+input GroupDecisionInput {
+  deadlines: GroupDecisionDeadlinesInput!
+  notifications: GroupDecisionNotificationSettingsInput!
+  openForSuggestions: GroupDecisionSuggestionSettingsInput!
+  voting: GroupDecisionVotingSettingsInput!
+}
+
+type GroupDecisionNotificationSettings {
+  deadlineReminders: Boolean!
+  newSuggestions: Boolean!
+  votingUpdates: Boolean!
+}
+
+input GroupDecisionNotificationSettingsInput {
+  deadlineReminders: Boolean!
+  newSuggestions: Boolean!
+  votingUpdates: Boolean!
+}
+
+type GroupDecisionSettings {
+  deadlines: GroupDecisionDeadlines!
+  notifications: GroupDecisionNotificationSettings!
+  openForSuggestions: GroupDecisionSuggestionSettings!
+  voting: GroupDecisionVotingSettings!
+}
+
+type GroupDecisionSuggestionSettings {
+  activity: Boolean!
+  dateTime: Boolean!
+  location: Boolean!
+}
+
+input GroupDecisionSuggestionSettingsInput {
+  activity: Boolean!
+  dateTime: Boolean!
+  location: Boolean!
+}
+
+type GroupDecisionSuggestions {
+  activities: [ActivitySuggestion!]!
+  dateTimes: [DateTimeSuggestion!]!
+  locations: [LocationSuggestion!]!
+}
+
+input GroupDecisionSuggestionsInput {
+  activities: [ActivitySuggestionInput!]
+  dateTimes: [DateTimeSuggestionInput!]
+  locations: [LocationSuggestionInput!]
+}
+
+type GroupDecisionVotingSettings {
+  anonymousSuggestions: Boolean!
+  anonymousVotes: Boolean!
+  optionsPerPerson: Float!
+  votesPerPerson: Float!
+}
+
+input GroupDecisionVotingSettingsInput {
+  anonymousSuggestions: Boolean!
+  anonymousVotes: Boolean!
+  optionsPerPerson: Float!
+  votesPerPerson: Float!
+}
+
+type Hangout {
+  activity: String
+  city: String
+  collaborationMode: Boolean!
+  country: String
+  createdAt: String!
+  createdBy: String!
+  creator: ID!
+  date: String
+  description: String
+  endDateTime: String
+  groupDecisionAnonymousSuggestionsEnabled: Boolean!
+  groupDecisionAnonymousVotingEnabled: Boolean!
+  groupDecisionSettings: GroupDecisionSettings
+  groupDecisionSuggestionDeadline: String
+  groupDecisionSuggestions: GroupDecisionSuggestions
+  groupDecisionSuggestionsPerPerson: Float!
+  groupDecisionVotesPerPerson: Float!
+  groupDecisionVotingDeadline: String
+  id: ID!
+  latitude: Float
+  location: String
+  locationDetails: HangoutLocationDetails
+  locationName: String
+  longitude: Float
+  startDateTime: String
+  state: String
+  status: HangoutStatus!
+  street1: String
+  street2: String
+  title: String!
+  updatedAt: String!
+  userId: ID!
+  uuid: String!
+  visibility: HangoutVisibility!
+  zipCode: String
+}
+
+enum HangoutAvailabilityType {
+  ALL_DAY
+  FLEXIBLE
+  SPECIFIC
+}
+
+type HangoutLocationCoordinates {
+  latitude: Float
+  longitude: Float
+}
+
+input HangoutLocationCoordinatesInput {
+  latitude: Float
+  longitude: Float
+}
+
+type HangoutLocationDetails {
+  coordinates: HangoutLocationCoordinates!
+  fullAddress: String
+  placedFormatted: String
+}
+
+input HangoutLocationDetailsInput {
+  coordinates: HangoutLocationCoordinatesInput
+  fullAddress: String
+  placedFormatted: String
+}
+
+enum HangoutStatus {
+  CANCELLED
+  COMPLETED
+  FINALIZED
+  PENDING
+}
+
+enum HangoutVisibility {
+  FRIENDS
+  PRIVATE
+  PUBLIC
+}
+
 type Hello {
   message: String!
 }
 
+type LocationSuggestion {
+  createdAt: String!
+  id: ID!
+  location: String!
+  locationDetails: HangoutLocationDetails
+  note: String
+  suggestedBy: ID!
+  updatedAt: String!
+}
+
+input LocationSuggestionInput {
+  location: String!
+  locationDetails: HangoutLocationDetailsInput
+  note: String
+}
+
 type Mutation {
+  """Creates a new hangout with optional group decision settings"""
+  createHangout(input: CreateHangoutInput!): Hangout!
+
   """
   Updates the push notification token for the authenticated user. Accepts Expo, FCM, and APNs token formats.
   """
@@ -19,6 +232,8 @@ input PushTokenInput {
 }
 
 type Query {
+  """Get a hangout by ID"""
+  hangout(id: String!): Hangout
   hello: Hello!
   helloAuth: Hello!
 }

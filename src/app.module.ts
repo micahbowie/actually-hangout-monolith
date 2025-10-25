@@ -49,6 +49,9 @@ import { UsersModule } from './users/users.module';
 // webhooks
 import { WebhooksModule } from './webhooks/webhooks.module';
 
+// hangouts
+import { HangoutsModule } from './hangouts/hangouts.module';
+
 const ONE_MINUTE_IN_MS = 60000;
 const FIVE_THOUSAND = 5000;
 const VALKEY_URL = isDev
@@ -62,6 +65,7 @@ const VALKEY_URL = isDev
     TemporalModule,
     UsersModule,
     WebhooksModule,
+    HangoutsModule,
     HealthModule,
     CacheModule.registerAsync({
       isGlobal: true,
