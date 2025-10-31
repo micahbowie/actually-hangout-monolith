@@ -6,7 +6,7 @@ import {
   ResolveField,
   Parent,
 } from '@nestjs/graphql';
-import { Logger, UseGuards } from '@nestjs/common';
+import { Logger, UseGuards, ParseIntPipe } from '@nestjs/common';
 import * as Sentry from '@sentry/nestjs';
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -15,7 +15,6 @@ import { HangoutsService } from './hangouts.service';
 import {
   HangoutNotFoundError,
   HangoutUnauthorizedError,
-  InvalidHangoutIdError,
   InvalidPaginationTokenError,
   UserNotFoundError,
 } from './errors/hangout.errors';
@@ -28,6 +27,7 @@ import {
 import { CreateHangoutInput } from './dto/create-hangout.input';
 import { GetHangoutsInput, HangoutsResponse } from './dto/get-hangouts.input';
 import { UsersService } from '../users/users.service';
+import { HangoutCollaboratorConnection } from './types/hangout-collaborator-connection.types';
 
 @Resolver(() => Hangout)
 export class HangoutsResolver {
@@ -37,18 +37,6 @@ export class HangoutsResolver {
     private readonly hangoutsService: HangoutsService,
     private readonly usersService: UsersService,
   ) {}
-
-  /**
-   * Parse and validate a string ID to a number
-   * @throws InvalidHangoutIdError if the ID is not a valid number
-   */
-  private parseHangoutId(id: string): number {
-    const numericId = parseInt(id, 10);
-    if (isNaN(numericId) || numericId <= 0) {
-      throw new InvalidHangoutIdError('Invalid hangout ID');
-    }
-    return numericId;
-  }
 
   @Mutation(() => Hangout, {
     name: 'createHangout',
@@ -135,17 +123,15 @@ export class HangoutsResolver {
   @UseGuards(ClerkAuthGuard)
   async getHangout(
     @CurrentUser() auth: AuthObject,
-    @Args('id') id: string,
+    @Args('id', ParseIntPipe) id: number,
   ): Promise<Hangout | null> {
-    const numericId = this.parseHangoutId(id);
-
     // Get the numeric user ID from clerk ID for authorization
     const user = await this.usersService.getUserByClerkId(auth.userId);
     if (!user) {
       throw new UserNotFoundError('User not found');
     }
 
-    return this.hangoutsService.getHangoutById(numericId, user.id);
+    return this.hangoutsService.getHangoutById(id, user.id);
   }
 
   @ResolveField(() => GroupDecisionSuggestions, { nullable: true })
@@ -212,6 +198,63 @@ export class HangoutsResolver {
     };
   }
 
+  @ResolveField(() => HangoutCollaboratorConnection, {
+    nullable: true,
+    description: 'Get paginated collaborators for this hangout',
+  })
+  @UseGuards(ClerkAuthGuard)
+  async collaborators(
+    @Parent() hangout: Hangout,
+    @CurrentUser() auth: AuthObject,
+    @Args('first', { type: () => Number, nullable: true, defaultValue: 20 })
+    first?: number,
+    @Args('after', { type: () => String, nullable: true })
+    after?: string,
+    @Args('last', { type: () => Number, nullable: true })
+    last?: number,
+    @Args('before', { type: () => String, nullable: true })
+    before?: string,
+  ): Promise<HangoutCollaboratorConnection | null> {
+    this.logger.debug({
+      message: 'Fetching collaborators for hangout',
+      hangoutId: hangout.id,
+      userId: auth.userId,
+      first,
+      after,
+      last,
+      before,
+    });
+
+    // Get the numeric user ID from clerk ID for authorization
+    const user = await this.usersService.getUserByClerkId(auth.userId);
+    if (!user) {
+      throw new UserNotFoundError('User not found');
+    }
+
+    // Authorization check: Verify user has permission to view this hangout's collaborators
+    // This verifies the user can access the hangout based on visibility rules
+    const authorizedHangout = await this.hangoutsService.getHangoutById(
+      hangout.id,
+      user.id,
+    );
+
+    if (!authorizedHangout) {
+      this.logger.warn({
+        message: 'Unauthorized access to hangout collaborators',
+        hangoutId: hangout.id,
+        userId: user.id,
+      });
+      throw new HangoutUnauthorizedError('Not authorized to view this hangout');
+    }
+
+    return this.hangoutsService.getCollaborators(hangout.id, {
+      first,
+      after,
+      last,
+      before,
+    });
+  }
+
   @Mutation(() => Boolean, {
     name: 'deleteHangout',
     description: 'Delete a hangout (only creator can delete)',
@@ -219,7 +262,7 @@ export class HangoutsResolver {
   @UseGuards(ClerkAuthGuard)
   async deleteHangout(
     @CurrentUser() auth: AuthObject,
-    @Args('id') id: string,
+    @Args('id', ParseIntPipe) id: number,
   ): Promise<boolean> {
     try {
       // Get the numeric user ID from clerk ID
@@ -228,12 +271,7 @@ export class HangoutsResolver {
         throw new UserNotFoundError('User not found');
       }
 
-      const numericId = this.parseHangoutId(id);
-
-      const result = await this.hangoutsService.deleteHangout(
-        numericId,
-        user.id,
-      );
+      const result = await this.hangoutsService.deleteHangout(id, user.id);
 
       this.logger.log({
         message: 'Hangout deleted successfully',
@@ -256,8 +294,7 @@ export class HangoutsResolver {
       if (
         error instanceof UserNotFoundError ||
         error instanceof HangoutNotFoundError ||
-        error instanceof HangoutUnauthorizedError ||
-        error instanceof InvalidHangoutIdError
+        error instanceof HangoutUnauthorizedError
       ) {
         // Capture in Sentry for monitoring
         Sentry.captureException(error, {

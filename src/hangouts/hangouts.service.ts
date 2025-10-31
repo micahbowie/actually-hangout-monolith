@@ -13,6 +13,12 @@ import {
   SuggestionType,
   SuggestionStatus,
 } from './entities/suggestion.entity';
+import { HangoutCollaborator } from './entities/hangout-collaborator.entity';
+import {
+  HangoutCollaboratorConnection,
+  HangoutCollaboratorEdge,
+  PageInfo,
+} from './types/hangout-collaborator-connection.types';
 import { CreateHangoutInput } from './dto/create-hangout.input';
 import {
   HangoutNotFoundError,
@@ -42,6 +48,8 @@ export class HangoutsService {
     private readonly hangoutRepository: Repository<Hangout>,
     @InjectRepository(Suggestion)
     private readonly suggestionRepository: Repository<Suggestion>,
+    @InjectRepository(HangoutCollaborator)
+    private readonly collaboratorRepository: Repository<HangoutCollaborator>,
   ) {}
 
   /**
@@ -393,7 +401,10 @@ export class HangoutsService {
 
   /**
    * Get hangouts with optional filtering and pagination
-   * Currently only returns hangouts owned by the user
+   * Returns hangouts the user has access to based on visibility:
+   * - User's own hangouts (all visibility levels)
+   * - Public hangouts from other users
+   * - Friends-only hangouts (TODO: requires friendship implementation)
    *
    * Note: The count query executes before pagination, which may impact
    * performance with large datasets. Consider making total optional or
@@ -425,10 +436,17 @@ export class HangoutsService {
       throw new InvalidPaginationTokenError('Invalid pagination token');
     }
 
-    // Build query
+    // Build query with visibility-based authorization
+    // Users can see:
+    // 1. Their own hangouts (any visibility)
+    // 2. Public hangouts from others
+    // 3. TODO: Friends-only hangouts where they are friends with the creator
     const queryBuilder = this.hangoutRepository
       .createQueryBuilder('hangout')
-      .where('hangout.user_id = :userId', { userId })
+      .where(
+        '(hangout.user_id = :userId OR hangout.visibility = :publicVisibility)',
+        { userId, publicVisibility: HangoutVisibility.PUBLIC },
+      )
       .orderBy('hangout.created_at', 'DESC');
 
     // Apply search filter with sanitization
@@ -499,6 +517,163 @@ export class HangoutsService {
       hangouts,
       nextToken,
       total,
+    };
+  }
+
+  /**
+   * Get paginated collaborators for a hangout using cursor-based pagination
+   * Implements the GraphQL Connection specification
+   */
+  async getCollaborators(
+    hangoutId: number,
+    pagination: {
+      first?: number;
+      after?: string;
+      last?: number;
+      before?: string;
+    },
+  ): Promise<HangoutCollaboratorConnection> {
+    this.logger.debug({
+      message: 'Getting collaborators for hangout',
+      hangoutId,
+      pagination,
+    });
+
+    const { first, after, last, before } = pagination;
+
+    // Validate pagination parameters
+    if (first && last) {
+      throw new Error('Cannot use both first and last parameters');
+    }
+
+    if (first && first < 0) {
+      throw new Error('first parameter must be non-negative');
+    }
+
+    if (last && last < 0) {
+      throw new Error('last parameter must be non-negative');
+    }
+
+    // Default page size
+    const pageSize = first || last || 20;
+
+    // Decode cursors to get the createdAt timestamps
+    let afterDate: Date | null = null;
+    let beforeDate: Date | null = null;
+
+    if (after) {
+      try {
+        const decodedAfter = Buffer.from(after, 'base64').toString('utf-8');
+        afterDate = new Date(decodedAfter);
+        if (isNaN(afterDate.getTime())) {
+          throw new Error('Invalid date');
+        }
+      } catch {
+        throw new Error('Invalid after cursor');
+      }
+    }
+
+    if (before) {
+      try {
+        const decodedBefore = Buffer.from(before, 'base64').toString('utf-8');
+        beforeDate = new Date(decodedBefore);
+        if (isNaN(beforeDate.getTime())) {
+          throw new Error('Invalid date');
+        }
+      } catch {
+        throw new Error('Invalid before cursor');
+      }
+    }
+
+    // Build query
+    const queryBuilder = this.collaboratorRepository
+      .createQueryBuilder('collaborator')
+      .where('collaborator.hangout_id = :hangoutId', { hangoutId })
+      .leftJoinAndSelect('collaborator.user', 'user');
+
+    // Apply cursor filtering
+    if (afterDate) {
+      queryBuilder.andWhere('collaborator.created_at > :afterDate', {
+        afterDate,
+      });
+    }
+
+    if (beforeDate) {
+      queryBuilder.andWhere('collaborator.created_at < :beforeDate', {
+        beforeDate,
+      });
+    }
+
+    // Determine sort order based on pagination direction
+    if (last) {
+      // For backward pagination, sort descending
+      queryBuilder.orderBy('collaborator.created_at', 'DESC');
+    } else {
+      // For forward pagination, sort ascending
+      queryBuilder.orderBy('collaborator.created_at', 'ASC');
+    }
+
+    // Fetch one more than requested to determine if there are more pages
+    queryBuilder.take(pageSize + 1);
+
+    // Execute query
+    let collaborators = await queryBuilder.getMany();
+
+    // Check if there are more results
+    const hasMore = collaborators.length > pageSize;
+
+    // Remove the extra item if we have more results
+    if (hasMore) {
+      collaborators = collaborators.slice(0, pageSize);
+    }
+
+    // If using backward pagination, reverse the results to maintain correct order
+    if (last) {
+      collaborators.reverse();
+    }
+
+    // Get total count
+    const totalCount = await this.collaboratorRepository.count({
+      where: { hangoutId },
+    });
+
+    // Build edges with cursors
+    const edges: HangoutCollaboratorEdge[] = collaborators.map(
+      (collaborator) => ({
+        node: collaborator,
+        cursor: Buffer.from(collaborator.createdAt.toISOString()).toString(
+          'base64',
+        ),
+      }),
+    );
+
+    // Build PageInfo
+    const pageInfo: PageInfo = {
+      hasNextPage: last ? false : hasMore,
+      hasPreviousPage: first ? false : hasMore,
+      startCursor: edges.length > 0 ? edges[0].cursor : null,
+      endCursor: edges.length > 0 ? edges[edges.length - 1].cursor : null,
+    };
+
+    // For backward pagination, hasNextPage should be based on whether we're not at the beginning
+    if (last) {
+      pageInfo.hasNextPage = afterDate !== null || beforeDate !== null;
+      pageInfo.hasPreviousPage = hasMore;
+    }
+
+    this.logger.log({
+      message: 'Collaborators retrieved successfully',
+      hangoutId,
+      count: edges.length,
+      totalCount,
+      hasNextPage: pageInfo.hasNextPage,
+      hasPreviousPage: pageInfo.hasPreviousPage,
+    });
+
+    return {
+      edges,
+      pageInfo,
+      totalCount,
     };
   }
 }

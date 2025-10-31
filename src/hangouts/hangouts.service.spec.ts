@@ -12,6 +12,7 @@ import {
   SuggestionType,
   HangoutAvailabilityType,
 } from './entities/suggestion.entity';
+import { HangoutCollaborator } from './entities/hangout-collaborator.entity';
 import { CreateHangoutInput } from './dto/create-hangout.input';
 
 // Mock uuid
@@ -57,6 +58,7 @@ describe('HangoutsService', () => {
     userId: mockUserId,
     user: null as any,
     suggestions: [],
+    collaborators: [],
     creator: mockUserId,
     createdBy: mockUserId.toString(),
     location: null,
@@ -92,6 +94,11 @@ describe('HangoutsService', () => {
       findOne: jest.fn(),
     };
 
+    const mockCollaboratorRepository = {
+      createQueryBuilder: jest.fn(),
+      count: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         HangoutsService,
@@ -102,6 +109,10 @@ describe('HangoutsService', () => {
         {
           provide: getRepositoryToken(Suggestion),
           useValue: mockSuggestionRepository,
+        },
+        {
+          provide: getRepositoryToken(HangoutCollaborator),
+          useValue: mockCollaboratorRepository,
         },
       ],
     }).compile();
@@ -1001,13 +1012,13 @@ describe('HangoutsService', () => {
 
   describe('getHangouts', () => {
     type MockQueryBuilder = {
-      where: jest.Mock;
-      andWhere: jest.Mock;
-      orderBy: jest.Mock;
-      skip: jest.Mock;
-      take: jest.Mock;
-      getCount: jest.Mock;
-      getMany: jest.Mock;
+      where: jest.Mock<MockQueryBuilder, [string, Record<string, unknown>]>;
+      andWhere: jest.Mock<MockQueryBuilder, [string, Record<string, unknown>]>;
+      orderBy: jest.Mock<MockQueryBuilder, [string, 'ASC' | 'DESC']>;
+      skip: jest.Mock<MockQueryBuilder, [number]>;
+      take: jest.Mock<MockQueryBuilder, [number]>;
+      getCount: jest.Mock<Promise<number>, []>;
+      getMany: jest.Mock<Promise<Hangout[]>, []>;
     };
 
     let queryBuilder: MockQueryBuilder;
@@ -1022,9 +1033,7 @@ describe('HangoutsService', () => {
         getCount: jest.fn(),
         getMany: jest.fn(),
       };
-      hangoutRepository.createQueryBuilder.mockReturnValue(
-        queryBuilder as never,
-      );
+      hangoutRepository.createQueryBuilder.mockReturnValue(queryBuilder);
     });
 
     it('returns hangouts for a user with default pagination', async () => {
@@ -1042,8 +1051,8 @@ describe('HangoutsService', () => {
         total: 1,
       });
       expect(queryBuilder.where).toHaveBeenCalledWith(
-        'hangout.user_id = :userId',
-        { userId },
+        '(hangout.user_id = :userId OR hangout.visibility = :publicVisibility)',
+        { userId, publicVisibility: 'public' },
       );
       expect(queryBuilder.orderBy).toHaveBeenCalledWith(
         'hangout.created_at',
@@ -1173,6 +1182,262 @@ describe('HangoutsService', () => {
       // QueryBuilder should not be called for invalid token
       expect(queryBuilder.getCount).not.toHaveBeenCalled();
       expect(queryBuilder.getMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getCollaborators', () => {
+    let collaboratorRepository: any;
+    let queryBuilder: any;
+
+    const mockCollaborator1: HangoutCollaborator = {
+      id: 1,
+      uuid: 'collab-uuid-1',
+      hangoutId: 1,
+      userId: 2,
+      role: 'collaborator' as any,
+      invitedBy: 1,
+      createdAt: new Date('2024-01-01T10:00:00Z'),
+      updatedAt: new Date('2024-01-01T10:00:00Z'),
+      hangout: null as any,
+      user: null as any,
+      inviter: null as any,
+    };
+
+    const mockCollaborator2: HangoutCollaborator = {
+      id: 2,
+      uuid: 'collab-uuid-2',
+      hangoutId: 1,
+      userId: 3,
+      role: 'organizer' as any,
+      invitedBy: 1,
+      createdAt: new Date('2024-01-01T11:00:00Z'),
+      updatedAt: new Date('2024-01-01T11:00:00Z'),
+      hangout: null as any,
+      user: null as any,
+      inviter: null as any,
+    };
+
+    beforeEach(() => {
+      queryBuilder = {
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        getMany: jest.fn(),
+      };
+
+      collaboratorRepository = {
+        createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
+        count: jest.fn(),
+      };
+
+      // Replace the mock in the service
+      (service as any).collaboratorRepository = collaboratorRepository;
+    });
+
+    it('returns paginated collaborators with forward pagination', async () => {
+      const hangoutId = 1;
+      const mockCollaborators = [mockCollaborator1, mockCollaborator2];
+
+      queryBuilder.getMany.mockResolvedValue(mockCollaborators);
+      collaboratorRepository.count.mockResolvedValue(2);
+
+      const result = await service.getCollaborators(hangoutId, {
+        first: 20,
+      });
+
+      expect(queryBuilder.where).toHaveBeenCalledWith(
+        'collaborator.hangout_id = :hangoutId',
+        { hangoutId },
+      );
+      expect(queryBuilder.orderBy).toHaveBeenCalledWith(
+        'collaborator.created_at',
+        'ASC',
+      );
+      expect(queryBuilder.take).toHaveBeenCalledWith(21); // pageSize + 1
+
+      expect(result.edges).toHaveLength(2);
+      expect(result.edges[0].node).toEqual(mockCollaborator1);
+      expect(result.edges[1].node).toEqual(mockCollaborator2);
+      expect(result.totalCount).toBe(2);
+      expect(result.pageInfo.hasNextPage).toBe(false);
+      expect(result.pageInfo.hasPreviousPage).toBe(false);
+    });
+
+    it('returns collaborators with cursor-based forward pagination', async () => {
+      const hangoutId = 1;
+      const afterCursor = Buffer.from('2024-01-01T10:00:00Z').toString(
+        'base64',
+      );
+
+      queryBuilder.getMany.mockResolvedValue([mockCollaborator2]);
+      collaboratorRepository.count.mockResolvedValue(2);
+
+      const result = await service.getCollaborators(hangoutId, {
+        first: 20,
+        after: afterCursor,
+      });
+
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'collaborator.created_at > :afterDate',
+        { afterDate: new Date('2024-01-01T10:00:00Z') },
+      );
+      expect(result.edges).toHaveLength(1);
+      expect(result.edges[0].node).toEqual(mockCollaborator2);
+    });
+
+    it('returns collaborators with backward pagination using last', async () => {
+      const hangoutId = 1;
+      const mockCollaborators = [mockCollaborator2, mockCollaborator1]; // Reversed order
+
+      queryBuilder.getMany.mockResolvedValue(mockCollaborators);
+      collaboratorRepository.count.mockResolvedValue(2);
+
+      const result = await service.getCollaborators(hangoutId, {
+        last: 20,
+      });
+
+      expect(queryBuilder.orderBy).toHaveBeenCalledWith(
+        'collaborator.created_at',
+        'DESC',
+      );
+
+      // Results should be reversed back to correct order
+      expect(result.edges).toHaveLength(2);
+      expect(result.edges[0].node).toEqual(mockCollaborator1);
+      expect(result.edges[1].node).toEqual(mockCollaborator2);
+    });
+
+    it('indicates hasNextPage when more results exist', async () => {
+      const hangoutId = 1;
+      const mockCollaborators = Array(21)
+        .fill(null)
+        .map((_, i) => ({
+          ...mockCollaborator1,
+          id: i + 1,
+          createdAt: new Date(
+            new Date('2024-01-01T10:00:00Z').getTime() + i * 60000,
+          ), // Add i minutes
+        }));
+
+      queryBuilder.getMany.mockResolvedValue(mockCollaborators);
+      collaboratorRepository.count.mockResolvedValue(21);
+
+      const result = await service.getCollaborators(hangoutId, {
+        first: 20,
+      });
+
+      // Should have 20 items (one removed as extra)
+      expect(result.edges).toHaveLength(20);
+      expect(result.pageInfo.hasNextPage).toBe(true);
+      expect(result.pageInfo.hasPreviousPage).toBe(false);
+    });
+
+    it('returns empty connection when no collaborators exist', async () => {
+      const hangoutId = 1;
+
+      queryBuilder.getMany.mockResolvedValue([]);
+      collaboratorRepository.count.mockResolvedValue(0);
+
+      const result = await service.getCollaborators(hangoutId, {
+        first: 20,
+      });
+
+      expect(result.edges).toHaveLength(0);
+      expect(result.totalCount).toBe(0);
+      expect(result.pageInfo.hasNextPage).toBe(false);
+      expect(result.pageInfo.hasPreviousPage).toBe(false);
+      expect(result.pageInfo.startCursor).toBeNull();
+      expect(result.pageInfo.endCursor).toBeNull();
+    });
+
+    it('uses default page size of 20 when no pagination params provided', async () => {
+      const hangoutId = 1;
+
+      queryBuilder.getMany.mockResolvedValue([mockCollaborator1]);
+      collaboratorRepository.count.mockResolvedValue(1);
+
+      await service.getCollaborators(hangoutId, {});
+
+      expect(queryBuilder.take).toHaveBeenCalledWith(21); // 20 + 1
+    });
+
+    it('throws error when both first and last are provided', async () => {
+      const hangoutId = 1;
+
+      await expect(
+        service.getCollaborators(hangoutId, { first: 10, last: 10 }),
+      ).rejects.toThrow('Cannot use both first and last parameters');
+    });
+
+    it('throws error for negative first parameter', async () => {
+      const hangoutId = 1;
+
+      await expect(
+        service.getCollaborators(hangoutId, { first: -1 }),
+      ).rejects.toThrow('first parameter must be non-negative');
+    });
+
+    it('throws error for negative last parameter', async () => {
+      const hangoutId = 1;
+
+      await expect(
+        service.getCollaborators(hangoutId, { last: -1 }),
+      ).rejects.toThrow('last parameter must be non-negative');
+    });
+
+    it('throws error for invalid after cursor', async () => {
+      const hangoutId = 1;
+
+      await expect(
+        service.getCollaborators(hangoutId, {
+          first: 20,
+          after: 'invalid-cursor',
+        }),
+      ).rejects.toThrow('Invalid after cursor');
+    });
+
+    it('throws error for invalid before cursor', async () => {
+      const hangoutId = 1;
+
+      await expect(
+        service.getCollaborators(hangoutId, {
+          first: 20,
+          before: 'invalid-cursor',
+        }),
+      ).rejects.toThrow('Invalid before cursor');
+    });
+
+    it('correctly encodes cursors as base64 timestamps', async () => {
+      const hangoutId = 1;
+
+      queryBuilder.getMany.mockResolvedValue([mockCollaborator1]);
+      collaboratorRepository.count.mockResolvedValue(1);
+
+      const result = await service.getCollaborators(hangoutId, {
+        first: 20,
+      });
+
+      const decodedCursor = Buffer.from(
+        result.edges[0].cursor,
+        'base64',
+      ).toString('utf-8');
+      expect(decodedCursor).toBe('2024-01-01T10:00:00.000Z');
+    });
+
+    it('includes user relation in query', async () => {
+      const hangoutId = 1;
+
+      queryBuilder.getMany.mockResolvedValue([mockCollaborator1]);
+      collaboratorRepository.count.mockResolvedValue(1);
+
+      await service.getCollaborators(hangoutId, { first: 20 });
+
+      expect(queryBuilder.leftJoinAndSelect).toHaveBeenCalledWith(
+        'collaborator.user',
+        'user',
+      );
     });
   });
 });

@@ -12,6 +12,7 @@ import {
 import { ObjectType, Field, ID, registerEnumType } from '@nestjs/graphql';
 import { User } from '../../users/entities/user.entity';
 import { Suggestion } from './suggestion.entity';
+import { HangoutCollaborator } from './hangout-collaborator.entity';
 
 export enum HangoutVisibility {
   PUBLIC = 'public',
@@ -123,7 +124,9 @@ export class GroupDecisionSettings {
 @Index(['userId', 'createdAt']) // Composite index for getHangouts default sorting
 @Index(['userId', 'status']) // Composite index for filtering by user and status
 @Index(['userId', 'collaborationMode']) // Composite index for filtering by collaboration mode
+@Index(['userId', 'startDateTime']) // Composite index for date range filtering by user
 @Index(['visibility', 'createdAt']) // Composite index for public hangout discovery
+@Index(['visibility', 'startDateTime']) // Composite index for public hangout date filtering
 export class Hangout {
   @Field(() => ID)
   @PrimaryGeneratedColumn()
@@ -296,6 +299,9 @@ export class Hangout {
 
   @OneToMany(() => Suggestion, (suggestion) => suggestion.hangout)
   suggestions: Suggestion[];
+
+  @OneToMany(() => HangoutCollaborator, (collaborator) => collaborator.hangout)
+  collaborators: HangoutCollaborator[];
 
   // Virtual fields for GraphQL
   @Field(() => ID)

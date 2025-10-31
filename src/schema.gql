@@ -16,6 +16,13 @@ input ActivitySuggestionInput {
   note: String
 }
 
+"""Role of a collaborator in a hangout"""
+enum CollaboratorRole {
+  COLLABORATOR
+  ORGANIZER
+  VIEWER
+}
+
 input CreateHangoutInput {
   activity: String
   collaborationMode: Boolean!
@@ -131,6 +138,9 @@ type Hangout {
   activity: String
   city: String
   collaborationMode: Boolean!
+
+  """Get paginated collaborators for this hangout"""
+  collaborators(after: String, before: String, first: Float = 20, last: Float): HangoutCollaboratorConnection
   country: String
   createdAt: String!
   createdBy: String!
@@ -169,6 +179,36 @@ enum HangoutAvailabilityType {
   ALL_DAY
   FLEXIBLE
   SPECIFIC
+}
+
+type HangoutCollaborator {
+  createdAt: String!
+  hangoutId: ID!
+  id: ID!
+  invitedBy: String
+  role: CollaboratorRole!
+  updatedAt: String!
+  userId: ID!
+  uuid: String!
+}
+
+type HangoutCollaboratorConnection {
+  """List of collaborator edges"""
+  edges: [HangoutCollaboratorEdge!]!
+
+  """Information about pagination"""
+  pageInfo: PageInfo!
+
+  """Total count of collaborators"""
+  totalCount: Int!
+}
+
+type HangoutCollaboratorEdge {
+  """Opaque cursor for this collaborator"""
+  cursor: String!
+
+  """The collaborator node"""
+  node: HangoutCollaborator!
 }
 
 type HangoutLocationCoordinates {
@@ -237,12 +277,26 @@ type Mutation {
   createHangout(input: CreateHangoutInput!): Hangout!
 
   """Delete a hangout (only creator can delete)"""
-  deleteHangout(id: String!): Boolean!
+  deleteHangout(id: Float!): Boolean!
 
   """
   Updates the push notification token for the authenticated user. Accepts Expo, FCM, and APNs token formats.
   """
   updateUserPushToken(input: PushTokenInput!): Boolean!
+}
+
+type PageInfo {
+  """The cursor of the last item in the result set"""
+  endCursor: String
+
+  """Indicates if there are more items after this page"""
+  hasNextPage: Boolean!
+
+  """Indicates if there are more items before this page"""
+  hasPreviousPage: Boolean!
+
+  """The cursor of the first item in the result set"""
+  startCursor: String
 }
 
 input PushTokenInput {
@@ -252,7 +306,7 @@ input PushTokenInput {
 
 type Query {
   """Get a hangout by ID with visibility authorization"""
-  hangout(id: String!): Hangout
+  hangout(id: Float!): Hangout
 
   """Get hangouts with filtering and pagination"""
   hangouts(input: GetHangoutsInput): HangoutsResponse!
