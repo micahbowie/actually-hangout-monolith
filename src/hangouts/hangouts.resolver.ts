@@ -25,9 +25,19 @@ import {
   HangoutAvailabilityType,
 } from './entities/suggestion.entity';
 import { CreateHangoutInput } from './dto/create-hangout.input';
+import { UpdateHangoutInput } from './dto/update-hangout.input';
+import { AddCollaboratorInput } from './dto/add-collaborator.input';
+import { RemoveCollaboratorInput } from './dto/remove-collaborator.input';
+import { InviteUserInput } from './dto/invite-user.input';
+import { UninviteUserInput } from './dto/uninvite-user.input';
+import { RespondToInvitationInput } from './dto/respond-invitation.input';
+import { GetInvitationsInput } from './dto/get-invitations.input';
 import { GetHangoutsInput, HangoutsResponse } from './dto/get-hangouts.input';
 import { UsersService } from '../users/users.service';
 import { HangoutCollaboratorConnection } from './types/hangout-collaborator-connection.types';
+import { HangoutCollaborator } from './entities/hangout-collaborator.entity';
+import { Invitation } from './entities/invitation.entity';
+import { InvitationConnection } from './types/invitation-connection.types';
 
 @Resolver(() => Hangout)
 export class HangoutsResolver {
@@ -375,6 +385,568 @@ export class HangoutsResolver {
         },
       });
       throw new Error('Failed to get hangouts. Please try again.');
+    }
+  }
+
+  @Mutation(() => Hangout, {
+    name: 'updateHangout',
+    description: 'Update a hangout (only creator can update)',
+  })
+  @UseGuards(ClerkAuthGuard)
+  async updateHangout(
+    @CurrentUser() auth: AuthObject,
+    @Args('input') input: UpdateHangoutInput,
+  ): Promise<Hangout> {
+    this.logger.log({
+      message: 'Updating hangout',
+      userId: auth.userId,
+      hangoutId: input.id,
+    });
+
+    try {
+      // Get the numeric user ID from clerk ID
+      const user = await this.usersService.getUserByClerkId(auth.userId);
+      if (!user) {
+        throw new UserNotFoundError('User not found');
+      }
+
+      const hangout = await this.hangoutsService.updateHangout(input, user.id);
+
+      this.logger.log({
+        message: 'Hangout updated successfully',
+        userId: auth.userId,
+        hangoutId: hangout.id,
+      });
+
+      return hangout;
+    } catch (error) {
+      this.logger.error({
+        message: 'Failed to update hangout',
+        userId: auth.userId,
+        hangoutId: input.id,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+
+      // Pass through known error types
+      if (
+        error instanceof UserNotFoundError ||
+        error instanceof HangoutNotFoundError ||
+        error instanceof HangoutUnauthorizedError
+      ) {
+        Sentry.captureException(error, {
+          extra: {
+            userId: auth.userId,
+            hangoutId: input.id,
+            input: JSON.stringify(input),
+          },
+        });
+        throw error;
+      }
+
+      // For validation errors, pass through the message
+      if (error instanceof Error) {
+        const lowerMessage = error.message.toLowerCase();
+        if (
+          lowerMessage.includes('required') ||
+          lowerMessage.includes('invalid') ||
+          lowerMessage.includes('must be') ||
+          lowerMessage.includes('cannot exceed') ||
+          lowerMessage.includes('deadline') ||
+          lowerMessage.includes('not found')
+        ) {
+          throw new Error(error.message);
+        }
+      }
+
+      // Capture unexpected errors in Sentry
+      Sentry.captureException(error, {
+        extra: {
+          userId: auth.userId,
+          hangoutId: input.id,
+          input: JSON.stringify(input),
+        },
+      });
+      throw new Error('Failed to update hangout. Please try again.');
+    }
+  }
+
+  @Mutation(() => HangoutCollaborator, {
+    name: 'addCollaborator',
+    description:
+      'Add a collaborator to a hangout (only creator can add, hangout must be in collaboration mode)',
+  })
+  @UseGuards(ClerkAuthGuard)
+  async addCollaborator(
+    @CurrentUser() auth: AuthObject,
+    @Args('input') input: AddCollaboratorInput,
+  ): Promise<HangoutCollaborator> {
+    this.logger.log({
+      message: 'Adding collaborator to hangout',
+      userId: auth.userId,
+      hangoutId: input.hangoutId,
+      collaboratorUserId: input.userId,
+    });
+
+    try {
+      // Get the numeric user ID from clerk ID
+      const user = await this.usersService.getUserByClerkId(auth.userId);
+      if (!user) {
+        throw new UserNotFoundError('User not found');
+      }
+
+      const collaborator = await this.hangoutsService.addCollaborator(
+        input,
+        user.id,
+      );
+
+      this.logger.log({
+        message: 'Collaborator added successfully',
+        userId: auth.userId,
+        hangoutId: input.hangoutId,
+        collaboratorId: collaborator.id,
+      });
+
+      return collaborator;
+    } catch (error) {
+      this.logger.error({
+        message: 'Failed to add collaborator',
+        userId: auth.userId,
+        hangoutId: input.hangoutId,
+        collaboratorUserId: input.userId,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+
+      // Pass through known error types
+      if (
+        error instanceof UserNotFoundError ||
+        error instanceof HangoutNotFoundError ||
+        error instanceof HangoutUnauthorizedError
+      ) {
+        Sentry.captureException(error, {
+          extra: {
+            userId: auth.userId,
+            input: JSON.stringify(input),
+          },
+        });
+        throw error;
+      }
+
+      // For validation errors, pass through the message
+      if (error instanceof Error) {
+        const lowerMessage = error.message.toLowerCase();
+        if (
+          lowerMessage.includes('already a collaborator') ||
+          lowerMessage.includes('not in collaboration mode') ||
+          lowerMessage.includes('not found')
+        ) {
+          throw new Error(error.message);
+        }
+      }
+
+      // Capture unexpected errors in Sentry
+      Sentry.captureException(error, {
+        extra: {
+          userId: auth.userId,
+          input: JSON.stringify(input),
+        },
+      });
+      throw new Error('Failed to add collaborator. Please try again.');
+    }
+  }
+
+  @Mutation(() => Boolean, {
+    name: 'removeCollaborator',
+    description:
+      'Remove a collaborator from a hangout (only creator can remove)',
+  })
+  @UseGuards(ClerkAuthGuard)
+  async removeCollaborator(
+    @CurrentUser() auth: AuthObject,
+    @Args('input') input: RemoveCollaboratorInput,
+  ): Promise<boolean> {
+    this.logger.log({
+      message: 'Removing collaborator from hangout',
+      userId: auth.userId,
+      hangoutId: input.hangoutId,
+      collaboratorUserId: input.userId,
+    });
+
+    try {
+      // Get the numeric user ID from clerk ID
+      const user = await this.usersService.getUserByClerkId(auth.userId);
+      if (!user) {
+        throw new UserNotFoundError('User not found');
+      }
+
+      const result = await this.hangoutsService.removeCollaborator(
+        input,
+        user.id,
+      );
+
+      this.logger.log({
+        message: 'Collaborator removed successfully',
+        userId: auth.userId,
+        hangoutId: input.hangoutId,
+      });
+
+      return result;
+    } catch (error) {
+      this.logger.error({
+        message: 'Failed to remove collaborator',
+        userId: auth.userId,
+        hangoutId: input.hangoutId,
+        collaboratorUserId: input.userId,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+
+      // Pass through known error types
+      if (
+        error instanceof UserNotFoundError ||
+        error instanceof HangoutNotFoundError ||
+        error instanceof HangoutUnauthorizedError
+      ) {
+        Sentry.captureException(error, {
+          extra: {
+            userId: auth.userId,
+            input: JSON.stringify(input),
+          },
+        });
+        throw error;
+      }
+
+      // For validation errors, pass through the message
+      if (error instanceof Error) {
+        const lowerMessage = error.message.toLowerCase();
+        if (
+          lowerMessage.includes('not a collaborator') ||
+          lowerMessage.includes('cannot remove') ||
+          lowerMessage.includes('not found')
+        ) {
+          throw new Error(error.message);
+        }
+      }
+
+      // Capture unexpected errors in Sentry
+      Sentry.captureException(error, {
+        extra: {
+          userId: auth.userId,
+          input: JSON.stringify(input),
+        },
+      });
+      throw new Error('Failed to remove collaborator. Please try again.');
+    }
+  }
+
+  @Mutation(() => Invitation, {
+    name: 'inviteUser',
+    description:
+      'Invite a user to a hangout (creator or collaborators can invite)',
+  })
+  @UseGuards(ClerkAuthGuard)
+  async inviteUser(
+    @CurrentUser() auth: AuthObject,
+    @Args('input') input: InviteUserInput,
+  ): Promise<Invitation> {
+    this.logger.log({
+      message: 'Inviting user to hangout',
+      userId: auth.userId,
+      hangoutId: input.hangoutId,
+      inviteeId: input.inviteeId,
+    });
+
+    try {
+      // Get the numeric user ID from clerk ID
+      const user = await this.usersService.getUserByClerkId(auth.userId);
+      if (!user) {
+        throw new UserNotFoundError('User not found');
+      }
+
+      const invitation = await this.hangoutsService.inviteUser(input, user.id);
+
+      this.logger.log({
+        message: 'User invited successfully',
+        userId: auth.userId,
+        hangoutId: input.hangoutId,
+        invitationId: invitation.id,
+      });
+
+      return invitation;
+    } catch (error) {
+      this.logger.error({
+        message: 'Failed to invite user',
+        userId: auth.userId,
+        hangoutId: input.hangoutId,
+        inviteeId: input.inviteeId,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+
+      // Pass through known error types
+      if (
+        error instanceof UserNotFoundError ||
+        error instanceof HangoutNotFoundError ||
+        error instanceof HangoutUnauthorizedError
+      ) {
+        Sentry.captureException(error, {
+          extra: {
+            userId: auth.userId,
+            input: JSON.stringify(input),
+          },
+        });
+        throw error;
+      }
+
+      // For validation errors, pass through the message
+      if (error instanceof Error) {
+        const lowerMessage = error.message.toLowerCase();
+        if (
+          lowerMessage.includes('already invited') ||
+          lowerMessage.includes('cannot invite') ||
+          lowerMessage.includes('not found')
+        ) {
+          throw new Error(error.message);
+        }
+      }
+
+      // Capture unexpected errors in Sentry
+      Sentry.captureException(error, {
+        extra: {
+          userId: auth.userId,
+          input: JSON.stringify(input),
+        },
+      });
+      throw new Error('Failed to invite user. Please try again.');
+    }
+  }
+
+  @Mutation(() => Boolean, {
+    name: 'uninviteUser',
+    description: 'Remove an invitation (creator or inviter can uninvite)',
+  })
+  @UseGuards(ClerkAuthGuard)
+  async uninviteUser(
+    @CurrentUser() auth: AuthObject,
+    @Args('input') input: UninviteUserInput,
+  ): Promise<boolean> {
+    this.logger.log({
+      message: 'Uninviting user from hangout',
+      userId: auth.userId,
+      hangoutId: input.hangoutId,
+      inviteeId: input.inviteeId,
+    });
+
+    try {
+      // Get the numeric user ID from clerk ID
+      const user = await this.usersService.getUserByClerkId(auth.userId);
+      if (!user) {
+        throw new UserNotFoundError('User not found');
+      }
+
+      const result = await this.hangoutsService.uninviteUser(input, user.id);
+
+      this.logger.log({
+        message: 'User uninvited successfully',
+        userId: auth.userId,
+        hangoutId: input.hangoutId,
+      });
+
+      return result;
+    } catch (error) {
+      this.logger.error({
+        message: 'Failed to uninvite user',
+        userId: auth.userId,
+        hangoutId: input.hangoutId,
+        inviteeId: input.inviteeId,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+
+      // Pass through known error types
+      if (
+        error instanceof UserNotFoundError ||
+        error instanceof HangoutNotFoundError ||
+        error instanceof HangoutUnauthorizedError
+      ) {
+        Sentry.captureException(error, {
+          extra: {
+            userId: auth.userId,
+            input: JSON.stringify(input),
+          },
+        });
+        throw error;
+      }
+
+      // For validation errors, pass through the message
+      if (error instanceof Error) {
+        const lowerMessage = error.message.toLowerCase();
+        if (
+          lowerMessage.includes('not invited') ||
+          lowerMessage.includes('not found')
+        ) {
+          throw new Error(error.message);
+        }
+      }
+
+      // Capture unexpected errors in Sentry
+      Sentry.captureException(error, {
+        extra: {
+          userId: auth.userId,
+          input: JSON.stringify(input),
+        },
+      });
+      throw new Error('Failed to uninvite user. Please try again.');
+    }
+  }
+
+  @Mutation(() => Invitation, {
+    name: 'respondToInvitation',
+    description: 'Respond to a hangout invitation (accept, decline, or maybe)',
+  })
+  @UseGuards(ClerkAuthGuard)
+  async respondToInvitation(
+    @CurrentUser() auth: AuthObject,
+    @Args('input') input: RespondToInvitationInput,
+  ): Promise<Invitation> {
+    this.logger.log({
+      message: 'Responding to invitation',
+      userId: auth.userId,
+      invitationId: input.invitationId,
+      status: input.status,
+    });
+
+    try {
+      // Get the numeric user ID from clerk ID
+      const user = await this.usersService.getUserByClerkId(auth.userId);
+      if (!user) {
+        throw new UserNotFoundError('User not found');
+      }
+
+      const invitation = await this.hangoutsService.respondToInvitation(
+        input,
+        user.id,
+      );
+
+      this.logger.log({
+        message: 'Invitation response recorded',
+        userId: auth.userId,
+        invitationId: input.invitationId,
+        status: input.status,
+      });
+
+      return invitation;
+    } catch (error) {
+      this.logger.error({
+        message: 'Failed to respond to invitation',
+        userId: auth.userId,
+        invitationId: input.invitationId,
+        status: input.status,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+
+      // Pass through known error types
+      if (
+        error instanceof UserNotFoundError ||
+        error instanceof HangoutUnauthorizedError
+      ) {
+        Sentry.captureException(error, {
+          extra: {
+            userId: auth.userId,
+            input: JSON.stringify(input),
+          },
+        });
+        throw error;
+      }
+
+      // For validation errors, pass through the message
+      if (error instanceof Error) {
+        const lowerMessage = error.message.toLowerCase();
+        if (
+          lowerMessage.includes('not found') ||
+          lowerMessage.includes('invalid') ||
+          lowerMessage.includes('cannot set')
+        ) {
+          throw new Error(error.message);
+        }
+      }
+
+      // Capture unexpected errors in Sentry
+      Sentry.captureException(error, {
+        extra: {
+          userId: auth.userId,
+          input: JSON.stringify(input),
+        },
+      });
+      throw new Error('Failed to respond to invitation. Please try again.');
+    }
+  }
+
+  @Query(() => InvitationConnection, {
+    name: 'getInvitations',
+    description: 'Get invitations with optional filters and pagination',
+  })
+  @UseGuards(ClerkAuthGuard)
+  async getInvitations(
+    @CurrentUser() auth: AuthObject,
+    @Args('input', { nullable: true }) input?: GetInvitationsInput,
+  ): Promise<InvitationConnection> {
+    this.logger.log({
+      message: 'Getting invitations',
+      userId: auth.userId,
+      filters: input ? JSON.stringify(input) : 'none',
+    });
+
+    try {
+      // Get the numeric user ID from clerk ID
+      const user = await this.usersService.getUserByClerkId(auth.userId);
+      if (!user) {
+        throw new UserNotFoundError('User not found');
+      }
+
+      const invitations = await this.hangoutsService.getInvitations(
+        input || {},
+        user.id,
+      );
+
+      this.logger.log({
+        message: 'Invitations retrieved',
+        userId: auth.userId,
+        count: invitations.edges.length,
+        totalCount: invitations.totalCount,
+      });
+
+      return invitations;
+    } catch (error) {
+      this.logger.error({
+        message: 'Failed to get invitations',
+        userId: auth.userId,
+        filters: input ? JSON.stringify(input) : 'none',
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+
+      // Pass through known error types
+      if (error instanceof UserNotFoundError) {
+        Sentry.captureException(error, {
+          extra: {
+            userId: auth.userId,
+            filters: input,
+          },
+        });
+        throw error;
+      }
+
+      // Capture unexpected errors in Sentry
+      Sentry.captureException(error, {
+        extra: {
+          userId: auth.userId,
+          filters: input,
+        },
+      });
+      throw new Error('Failed to get invitations. Please try again.');
     }
   }
 }

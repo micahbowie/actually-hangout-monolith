@@ -13,6 +13,7 @@ import {
   HangoutAvailabilityType,
 } from './entities/suggestion.entity';
 import { HangoutCollaborator } from './entities/hangout-collaborator.entity';
+import { Invitation, InvitationStatus } from './entities/invitation.entity';
 import { CreateHangoutInput } from './dto/create-hangout.input';
 
 // Mock uuid
@@ -24,6 +25,7 @@ jest.mock('uuid', () => ({
 describe('HangoutsService', () => {
   let service: HangoutsService;
   let hangoutRepository: jest.Mocked<Repository<Hangout>>;
+  let invitationRepository: any;
   let mockManager: any;
 
   const mockUserId = 1;
@@ -73,6 +75,7 @@ describe('HangoutsService', () => {
     mockManager = {
       create: jest.fn(),
       save: jest.fn(),
+      findOne: jest.fn(),
     };
 
     const mockHangoutRepository = {
@@ -99,6 +102,16 @@ describe('HangoutsService', () => {
       count: jest.fn(),
     };
 
+    const mockInvitationRepository = {
+      manager: {
+        transaction: jest.fn(async (callback) => {
+          return await callback(mockManager);
+        }),
+      },
+      createQueryBuilder: jest.fn(),
+      count: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         HangoutsService,
@@ -114,11 +127,16 @@ describe('HangoutsService', () => {
           provide: getRepositoryToken(HangoutCollaborator),
           useValue: mockCollaboratorRepository,
         },
+        {
+          provide: getRepositoryToken(Invitation),
+          useValue: mockInvitationRepository,
+        },
       ],
     }).compile();
 
     service = module.get<HangoutsService>(HangoutsService);
     hangoutRepository = module.get(getRepositoryToken(Hangout));
+    invitationRepository = module.get(getRepositoryToken(Invitation));
   });
 
   it('is defined', () => {
@@ -1437,6 +1455,1323 @@ describe('HangoutsService', () => {
       expect(queryBuilder.leftJoinAndSelect).toHaveBeenCalledWith(
         'collaborator.user',
         'user',
+      );
+    });
+  });
+
+  describe('updateHangout', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+    });
+
+    it('updates a hangout with all fields', async () => {
+      const futureDate1 = new Date(
+        Date.now() + 7 * 24 * 60 * 60 * 1000,
+      ).toISOString(); // 7 days from now
+      const futureDate2 = new Date(
+        Date.now() + 14 * 24 * 60 * 60 * 1000,
+      ).toISOString(); // 14 days from now
+      const futureDate3 = new Date(
+        Date.now() + 21 * 24 * 60 * 60 * 1000,
+      ).toISOString(); // 21 days from now
+
+      const updateInput = {
+        id: 1,
+        title: 'Updated Title',
+        description: 'Updated Description',
+        location: 'Updated Location',
+        date: futureDate3,
+        visibility: HangoutVisibility.PRIVATE,
+        status: HangoutStatus.FINALIZED,
+        collaborationMode: true,
+        locationDetails: {
+          coordinates: { latitude: 40.7128, longitude: -74.006 },
+          fullAddress: '123 Main St, New York, NY',
+          placedFormatted: 'Central Park',
+        },
+        groupDecision: {
+          voting: {
+            anonymousVotes: true,
+            anonymousSuggestions: true,
+            votesPerPerson: 3,
+            optionsPerPerson: 2,
+          },
+          openForSuggestions: {
+            location: true,
+            activity: true,
+            dateTime: true,
+          },
+          deadlines: {
+            suggestion: futureDate1,
+            voting: futureDate2,
+          },
+          notifications: {
+            newSuggestions: true,
+            votingUpdates: true,
+            deadlineReminders: true,
+          },
+        },
+      };
+
+      const updatedHangout = { ...mockHangout, ...updateInput };
+
+      mockManager.findOne.mockResolvedValue(mockHangout);
+      mockManager.save.mockResolvedValue(updatedHangout);
+
+      const result = await service.updateHangout(updateInput, mockUserId);
+
+      expect(mockManager.findOne).toHaveBeenCalledWith(Hangout, {
+        where: { id: updateInput.id },
+      });
+      expect(mockManager.save).toHaveBeenCalledWith(
+        Hangout,
+        expect.any(Object),
+      );
+      expect(result).toEqual(updatedHangout);
+    });
+
+    it('throws HangoutNotFoundError when hangout does not exist', async () => {
+      const updateInput = {
+        id: 999,
+        title: 'Updated Title',
+      };
+
+      mockManager.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.updateHangout(updateInput, mockUserId),
+      ).rejects.toThrow('Hangout not found');
+    });
+
+    it('throws HangoutUnauthorizedError when user is not the creator', async () => {
+      const updateInput = {
+        id: 1,
+        title: 'Updated Title',
+      };
+
+      mockManager.findOne.mockResolvedValue({
+        ...mockHangout,
+        userId: 999, // Different user
+      });
+
+      await expect(
+        service.updateHangout(updateInput, mockUserId),
+      ).rejects.toThrow('Not authorized to update this hangout');
+    });
+
+    it('updates only provided fields', async () => {
+      const updateInput = {
+        id: 1,
+        title: 'Updated Title',
+        // Other fields omitted
+      };
+
+      const updatedHangout = { ...mockHangout, title: updateInput.title };
+
+      mockManager.findOne.mockResolvedValue(mockHangout);
+      mockManager.save.mockResolvedValue(updatedHangout);
+
+      const result = await service.updateHangout(updateInput, mockUserId);
+
+      expect(result.title).toBe(updateInput.title);
+      expect(result.description).toBe(mockHangout.description); // Unchanged
+    });
+
+    it('clears date when empty string is provided', async () => {
+      const updateInput = {
+        id: 1,
+        date: '',
+      };
+
+      const updatedHangout = { ...mockHangout, startDateTime: null };
+
+      mockManager.findOne.mockResolvedValue(mockHangout);
+      mockManager.save.mockResolvedValue(updatedHangout);
+
+      const result = await service.updateHangout(updateInput, mockUserId);
+
+      expect(result.startDateTime).toBeNull();
+    });
+
+    it('throws error for invalid date format', async () => {
+      const updateInput = {
+        id: 1,
+        date: 'invalid-date',
+      };
+
+      mockManager.findOne.mockResolvedValue(mockHangout);
+
+      await expect(
+        service.updateHangout(updateInput, mockUserId),
+      ).rejects.toThrow('Invalid date format');
+    });
+
+    it('clears location details when null is provided', async () => {
+      const updateInput = {
+        id: 1,
+        locationDetails: null,
+      };
+
+      const updatedHangout = {
+        ...mockHangout,
+        street1: null,
+        latitude: null,
+        longitude: null,
+      };
+
+      mockManager.findOne.mockResolvedValue(mockHangout);
+      mockManager.save.mockResolvedValue(updatedHangout);
+
+      const result = await service.updateHangout(updateInput, mockUserId);
+
+      expect(result.latitude).toBeNull();
+      expect(result.longitude).toBeNull();
+    });
+
+    it('validates group decision deadlines are in the future', async () => {
+      const pastDate = new Date(Date.now() - 86400000).toISOString(); // Yesterday
+      const futureDate = new Date(
+        Date.now() + 14 * 24 * 60 * 60 * 1000,
+      ).toISOString(); // 14 days from now
+
+      const updateInput = {
+        id: 1,
+        collaborationMode: true,
+        groupDecision: {
+          voting: {
+            anonymousVotes: true,
+            anonymousSuggestions: true,
+            votesPerPerson: 1,
+            optionsPerPerson: 1,
+          },
+          openForSuggestions: {
+            location: true,
+            activity: true,
+            dateTime: true,
+          },
+          deadlines: {
+            suggestion: pastDate,
+            voting: futureDate,
+          },
+          notifications: {
+            newSuggestions: true,
+            votingUpdates: true,
+            deadlineReminders: true,
+          },
+        },
+      };
+
+      mockManager.findOne.mockResolvedValue(mockHangout);
+
+      await expect(
+        service.updateHangout(updateInput, mockUserId),
+      ).rejects.toThrow('Suggestion deadline must be in the future');
+    });
+
+    it('validates suggestion deadline is before voting deadline', async () => {
+      const futureDate1 = new Date(
+        Date.now() + 14 * 24 * 60 * 60 * 1000,
+      ).toISOString(); // 14 days from now
+      const futureDate2 = new Date(
+        Date.now() + 7 * 24 * 60 * 60 * 1000,
+      ).toISOString(); // 7 days from now (before suggestion deadline)
+
+      const updateInput = {
+        id: 1,
+        collaborationMode: true,
+        groupDecision: {
+          voting: {
+            anonymousVotes: true,
+            anonymousSuggestions: true,
+            votesPerPerson: 1,
+            optionsPerPerson: 1,
+          },
+          openForSuggestions: {
+            location: true,
+            activity: true,
+            dateTime: true,
+          },
+          deadlines: {
+            suggestion: futureDate1,
+            voting: futureDate2, // Before suggestion deadline
+          },
+          notifications: {
+            newSuggestions: true,
+            votingUpdates: true,
+            deadlineReminders: true,
+          },
+        },
+      };
+
+      mockManager.findOne.mockResolvedValue(mockHangout);
+
+      await expect(
+        service.updateHangout(updateInput, mockUserId),
+      ).rejects.toThrow('Suggestion deadline must be before voting deadline');
+    });
+  });
+
+  describe('addCollaborator', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+      const collaboratorManager = {
+        findOne: jest.fn(),
+        create: jest.fn(),
+        save: jest.fn(),
+      };
+      (service as any).collaboratorRepository = {
+        manager: {
+          transaction: jest.fn(async (callback) => {
+            return await callback(collaboratorManager);
+          }),
+        },
+      };
+      // Store reference for tests to access
+      (service as any).collaboratorManager = collaboratorManager;
+    });
+
+    it('adds a collaborator to a hangout', async () => {
+      const addInput = {
+        hangoutId: 1,
+        userId: 2,
+        role: 'collaborator' as any,
+      };
+
+      const collaborationHangout = {
+        ...mockHangout,
+        collaborationMode: true,
+      };
+
+      const mockCollaborator = {
+        id: 1,
+        uuid: 'test-uuid-1234',
+        hangoutId: 1,
+        userId: 2,
+        role: 'collaborator',
+        invitedBy: mockUserId,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      const collaboratorManager = (service as any).collaboratorManager;
+      collaboratorManager.findOne.mockResolvedValueOnce(collaborationHangout); // Hangout lookup
+      collaboratorManager.findOne.mockResolvedValueOnce(null); // No existing collaborator
+      collaboratorManager.create.mockReturnValue(mockCollaborator);
+      collaboratorManager.save.mockResolvedValue(mockCollaborator);
+
+      const result = await service.addCollaborator(addInput, mockUserId);
+
+      expect(collaboratorManager.findOne).toHaveBeenCalledWith(Hangout, {
+        where: { id: addInput.hangoutId },
+      });
+      expect(result).toEqual(mockCollaborator);
+    });
+
+    it('throws HangoutNotFoundError when hangout does not exist', async () => {
+      const addInput = {
+        hangoutId: 999,
+        userId: 2,
+      };
+
+      const collaboratorManager = (service as any).collaboratorManager;
+      collaboratorManager.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.addCollaborator(addInput, mockUserId),
+      ).rejects.toThrow('Hangout not found');
+    });
+
+    it('throws HangoutUnauthorizedError when user is not the creator', async () => {
+      const addInput = {
+        hangoutId: 1,
+        userId: 2,
+      };
+
+      const collaboratorManager = (service as any).collaboratorManager;
+      collaboratorManager.findOne.mockResolvedValue({
+        ...mockHangout,
+        userId: 999,
+        collaborationMode: true,
+      });
+
+      await expect(
+        service.addCollaborator(addInput, mockUserId),
+      ).rejects.toThrow('Not authorized to add collaborators to this hangout');
+    });
+
+    it('throws error when hangout is not in collaboration mode', async () => {
+      const addInput = {
+        hangoutId: 1,
+        userId: 2,
+      };
+
+      const collaboratorManager = (service as any).collaboratorManager;
+      collaboratorManager.findOne.mockResolvedValue({
+        ...mockHangout,
+        collaborationMode: false,
+      });
+
+      await expect(
+        service.addCollaborator(addInput, mockUserId),
+      ).rejects.toThrow(
+        'Cannot add collaborators to a hangout not in collaboration mode',
+      );
+    });
+
+    it('throws error when user is already a collaborator', async () => {
+      const addInput = {
+        hangoutId: 1,
+        userId: 2,
+      };
+
+      const existingCollaborator = {
+        id: 1,
+        userId: 2,
+        hangoutId: 1,
+      };
+
+      const collaboratorManager = (service as any).collaboratorManager;
+      collaboratorManager.findOne.mockResolvedValueOnce({
+        ...mockHangout,
+        collaborationMode: true,
+      });
+      collaboratorManager.findOne.mockResolvedValueOnce(existingCollaborator);
+
+      await expect(
+        service.addCollaborator(addInput, mockUserId),
+      ).rejects.toThrow('User is already a collaborator on this hangout');
+    });
+
+    it('sets invitedBy field to requesting user', async () => {
+      const addInput = {
+        hangoutId: 1,
+        userId: 2,
+      };
+
+      const collaborationHangout = {
+        ...mockHangout,
+        collaborationMode: true,
+      };
+
+      const collaboratorManager = (service as any).collaboratorManager;
+      collaboratorManager.findOne.mockResolvedValueOnce(collaborationHangout);
+      collaboratorManager.findOne.mockResolvedValueOnce(null);
+      collaboratorManager.create.mockImplementation((entity, data) => data);
+      collaboratorManager.save.mockResolvedValue({});
+
+      await service.addCollaborator(addInput, mockUserId);
+
+      expect(collaboratorManager.create).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          invitedBy: mockUserId,
+        }),
+      );
+    });
+  });
+
+  describe('removeCollaborator', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+      const removeManager = {
+        findOne: jest.fn(),
+        delete: jest.fn(),
+      };
+      (service as any).collaboratorRepository = {
+        manager: {
+          transaction: jest.fn(async (callback) => {
+            return await callback(removeManager);
+          }),
+        },
+      };
+      // Store reference for tests to access
+      (service as any).removeManager = removeManager;
+    });
+
+    it('removes a collaborator from a hangout', async () => {
+      const removeInput = {
+        hangoutId: 1,
+        userId: 2,
+      };
+
+      const mockCollaborator = {
+        id: 1,
+        hangoutId: 1,
+        userId: 2,
+        role: 'collaborator' as any,
+      };
+
+      const removeManager = (service as any).removeManager;
+      removeManager.findOne.mockResolvedValueOnce(mockHangout); // Hangout lookup
+      removeManager.findOne.mockResolvedValueOnce(mockCollaborator); // Collaborator lookup
+      removeManager.delete.mockResolvedValue({ affected: 1 });
+
+      const result = await service.removeCollaborator(removeInput, mockUserId);
+
+      expect(removeManager.findOne).toHaveBeenCalledWith(Hangout, {
+        where: { id: removeInput.hangoutId },
+      });
+      expect(removeManager.delete).toHaveBeenCalledWith(expect.anything(), {
+        id: mockCollaborator.id,
+      });
+      expect(result).toBe(true);
+    });
+
+    it('throws HangoutNotFoundError when hangout does not exist', async () => {
+      const removeInput = {
+        hangoutId: 999,
+        userId: 2,
+      };
+
+      const removeManager = (service as any).removeManager;
+      removeManager.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.removeCollaborator(removeInput, mockUserId),
+      ).rejects.toThrow('Hangout not found');
+    });
+
+    it('throws HangoutUnauthorizedError when user is not the creator', async () => {
+      const removeInput = {
+        hangoutId: 1,
+        userId: 2,
+      };
+
+      const removeManager = (service as any).removeManager;
+      removeManager.findOne.mockResolvedValue({
+        ...mockHangout,
+        userId: 999,
+      });
+
+      await expect(
+        service.removeCollaborator(removeInput, mockUserId),
+      ).rejects.toThrow(
+        'Not authorized to remove collaborators from this hangout',
+      );
+    });
+
+    it('throws error when collaborator does not exist', async () => {
+      const removeInput = {
+        hangoutId: 1,
+        userId: 2,
+      };
+
+      const removeManager = (service as any).removeManager;
+      removeManager.findOne.mockResolvedValueOnce(mockHangout);
+      removeManager.findOne.mockResolvedValueOnce(null);
+
+      await expect(
+        service.removeCollaborator(removeInput, mockUserId),
+      ).rejects.toThrow('User is not a collaborator on this hangout');
+    });
+
+    it('throws error when trying to remove organizer', async () => {
+      const removeInput = {
+        hangoutId: 1,
+        userId: 2,
+      };
+
+      const organizerCollaborator = {
+        id: 1,
+        hangoutId: 1,
+        userId: 2,
+        role: 'organizer' as any,
+      };
+
+      const removeManager = (service as any).removeManager;
+      removeManager.findOne.mockResolvedValueOnce(mockHangout);
+      removeManager.findOne.mockResolvedValueOnce(organizerCollaborator);
+
+      await expect(
+        service.removeCollaborator(removeInput, mockUserId),
+      ).rejects.toThrow('Cannot remove the organizer from the hangout');
+    });
+  });
+
+  describe('inviteUser', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+      const inviteManager = {
+        findOne: jest.fn(),
+        create: jest.fn(),
+        save: jest.fn(),
+      };
+      (service as any).invitationRepository = {
+        manager: {
+          transaction: jest.fn(async (callback) => {
+            return await callback(inviteManager);
+          }),
+        },
+      };
+      (service as any).inviteManager = inviteManager;
+    });
+
+    it('invites a user to a hangout', async () => {
+      const inviteInput = {
+        hangoutId: 1,
+        inviteeId: 2,
+        message: 'Come join us!',
+      };
+
+      const mockInvitation = {
+        id: 1,
+        uuid: 'test-uuid-1234',
+        hangoutId: 1,
+        inviteeId: 2,
+        inviterId: mockUserId,
+        status: InvitationStatus.PENDING,
+        message: 'Come join us!',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      const inviteManager = (service as any).inviteManager;
+      inviteManager.findOne.mockResolvedValueOnce(mockHangout); // Hangout lookup
+      inviteManager.findOne.mockResolvedValueOnce(null); // No existing invitation
+      inviteManager.create.mockReturnValue(mockInvitation);
+      inviteManager.save.mockResolvedValue(mockInvitation);
+
+      const result = await service.inviteUser(inviteInput, mockUserId);
+
+      expect(inviteManager.findOne).toHaveBeenCalledWith(Hangout, {
+        where: { id: inviteInput.hangoutId },
+      });
+      expect(result).toEqual(mockInvitation);
+    });
+
+    it('allows collaborators to invite users in collaboration mode', async () => {
+      const inviteInput = {
+        hangoutId: 1,
+        inviteeId: 3,
+      };
+
+      const collaborationHangout = {
+        ...mockHangout,
+        userId: 999, // Different creator
+        collaborationMode: true,
+      };
+
+      const mockCollaborator = {
+        id: 1,
+        hangoutId: 1,
+        userId: mockUserId,
+        role: 'collaborator' as any,
+      };
+
+      const mockInvitation = {
+        id: 1,
+        uuid: 'test-uuid-1234',
+        hangoutId: 1,
+        inviteeId: 3,
+        inviterId: mockUserId,
+        status: InvitationStatus.PENDING,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      const inviteManager = (service as any).inviteManager;
+      inviteManager.findOne.mockResolvedValueOnce(collaborationHangout); // Hangout lookup
+      inviteManager.findOne.mockResolvedValueOnce(mockCollaborator); // Collaborator check
+      inviteManager.findOne.mockResolvedValueOnce(null); // No existing invitation
+      inviteManager.create.mockReturnValue(mockInvitation);
+      inviteManager.save.mockResolvedValue(mockInvitation);
+
+      const result = await service.inviteUser(inviteInput, mockUserId);
+
+      expect(result).toEqual(mockInvitation);
+    });
+
+    it('throws HangoutNotFoundError when hangout does not exist', async () => {
+      const inviteInput = {
+        hangoutId: 999,
+        inviteeId: 2,
+      };
+
+      const inviteManager = (service as any).inviteManager;
+      inviteManager.findOne.mockResolvedValue(null);
+
+      await expect(service.inviteUser(inviteInput, mockUserId)).rejects.toThrow(
+        'Hangout not found',
+      );
+    });
+
+    it('throws HangoutUnauthorizedError when user is not creator or collaborator', async () => {
+      const inviteInput = {
+        hangoutId: 1,
+        inviteeId: 2,
+      };
+
+      const otherUserHangout = {
+        ...mockHangout,
+        userId: 999,
+        collaborationMode: false,
+      };
+
+      const inviteManager = (service as any).inviteManager;
+      inviteManager.findOne.mockResolvedValue(otherUserHangout);
+
+      await expect(service.inviteUser(inviteInput, mockUserId)).rejects.toThrow(
+        'Not authorized to invite users to this hangout',
+      );
+    });
+
+    it('throws error when user is already invited', async () => {
+      const inviteInput = {
+        hangoutId: 1,
+        inviteeId: 2,
+      };
+
+      const existingInvitation = {
+        id: 1,
+        hangoutId: 1,
+        inviteeId: 2,
+        status: InvitationStatus.PENDING,
+      };
+
+      const inviteManager = (service as any).inviteManager;
+      inviteManager.findOne.mockResolvedValueOnce(mockHangout);
+      inviteManager.findOne.mockResolvedValueOnce(existingInvitation);
+
+      await expect(service.inviteUser(inviteInput, mockUserId)).rejects.toThrow(
+        'User is already invited to this hangout',
+      );
+    });
+
+    it('throws error when trying to invite yourself', async () => {
+      const inviteInput = {
+        hangoutId: 1,
+        inviteeId: mockUserId, // Same as requesting user
+      };
+
+      const inviteManager = (service as any).inviteManager;
+      inviteManager.findOne.mockResolvedValueOnce(mockHangout);
+      inviteManager.findOne.mockResolvedValueOnce(null);
+
+      await expect(service.inviteUser(inviteInput, mockUserId)).rejects.toThrow(
+        'Cannot invite yourself to a hangout',
+      );
+    });
+  });
+
+  describe('uninviteUser', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+      const uninviteManager = {
+        findOne: jest.fn(),
+        delete: jest.fn(),
+      };
+      (service as any).invitationRepository = {
+        manager: {
+          transaction: jest.fn(async (callback) => {
+            return await callback(uninviteManager);
+          }),
+        },
+      };
+      (service as any).uninviteManager = uninviteManager;
+    });
+
+    it('removes an invitation from a hangout', async () => {
+      const uninviteInput = {
+        hangoutId: 1,
+        inviteeId: 2,
+      };
+
+      const mockInvitation = {
+        id: 1,
+        hangoutId: 1,
+        inviteeId: 2,
+        inviterId: mockUserId,
+        status: InvitationStatus.PENDING,
+      };
+
+      const uninviteManager = (service as any).uninviteManager;
+      uninviteManager.findOne.mockResolvedValueOnce(mockHangout);
+      uninviteManager.findOne.mockResolvedValueOnce(mockInvitation);
+      uninviteManager.delete.mockResolvedValue({ affected: 1 });
+
+      const result = await service.uninviteUser(uninviteInput, mockUserId);
+
+      expect(uninviteManager.delete).toHaveBeenCalledWith(Invitation, {
+        id: mockInvitation.id,
+      });
+      expect(result).toBe(true);
+    });
+
+    it('allows inviter to remove their own invitation', async () => {
+      const uninviteInput = {
+        hangoutId: 1,
+        inviteeId: 2,
+      };
+
+      const otherUserHangout = {
+        ...mockHangout,
+        userId: 999, // Different creator
+      };
+
+      const mockInvitation = {
+        id: 1,
+        hangoutId: 1,
+        inviteeId: 2,
+        inviterId: mockUserId, // Current user is inviter
+        status: InvitationStatus.PENDING,
+      };
+
+      const uninviteManager = (service as any).uninviteManager;
+      uninviteManager.findOne.mockResolvedValueOnce(otherUserHangout);
+      uninviteManager.findOne.mockResolvedValueOnce(mockInvitation);
+      uninviteManager.delete.mockResolvedValue({ affected: 1 });
+
+      const result = await service.uninviteUser(uninviteInput, mockUserId);
+
+      expect(result).toBe(true);
+    });
+
+    it('throws HangoutNotFoundError when hangout does not exist', async () => {
+      const uninviteInput = {
+        hangoutId: 999,
+        inviteeId: 2,
+      };
+
+      const uninviteManager = (service as any).uninviteManager;
+      uninviteManager.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.uninviteUser(uninviteInput, mockUserId),
+      ).rejects.toThrow('Hangout not found');
+    });
+
+    it('throws error when invitation does not exist', async () => {
+      const uninviteInput = {
+        hangoutId: 1,
+        inviteeId: 2,
+      };
+
+      const uninviteManager = (service as any).uninviteManager;
+      uninviteManager.findOne.mockResolvedValueOnce(mockHangout);
+      uninviteManager.findOne.mockResolvedValueOnce(null);
+
+      await expect(
+        service.uninviteUser(uninviteInput, mockUserId),
+      ).rejects.toThrow('User is not invited to this hangout');
+    });
+
+    it('throws HangoutUnauthorizedError when user is not creator or inviter', async () => {
+      const uninviteInput = {
+        hangoutId: 1,
+        inviteeId: 2,
+      };
+
+      const otherUserHangout = {
+        ...mockHangout,
+        userId: 999,
+      };
+
+      const mockInvitation = {
+        id: 1,
+        hangoutId: 1,
+        inviteeId: 2,
+        inviterId: 888, // Different inviter
+        status: InvitationStatus.PENDING,
+      };
+
+      const uninviteManager = (service as any).uninviteManager;
+      uninviteManager.findOne.mockResolvedValueOnce(otherUserHangout);
+      uninviteManager.findOne.mockResolvedValueOnce(mockInvitation);
+
+      await expect(
+        service.uninviteUser(uninviteInput, mockUserId),
+      ).rejects.toThrow('Not authorized to remove this invitation');
+    });
+  });
+
+  describe('respondToInvitation', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+      const respondManager = {
+        findOne: jest.fn(),
+        save: jest.fn(),
+      };
+      (service as any).invitationRepository = {
+        manager: {
+          transaction: jest.fn(async (callback) => {
+            return await callback(respondManager);
+          }),
+        },
+      };
+      (service as any).respondManager = respondManager;
+    });
+
+    it('accepts an invitation', async () => {
+      const respondInput = {
+        invitationId: 1,
+        status: InvitationStatus.ACCEPTED,
+      };
+
+      const mockInvitation = {
+        id: 1,
+        hangoutId: 1,
+        inviteeId: mockUserId,
+        inviterId: 2,
+        status: InvitationStatus.PENDING,
+        respondedAt: null,
+      };
+
+      const updatedInvitation = {
+        ...mockInvitation,
+        status: InvitationStatus.ACCEPTED,
+        respondedAt: expect.any(Date),
+      };
+
+      const respondManager = (service as any).respondManager;
+      respondManager.findOne.mockResolvedValue(mockInvitation);
+      respondManager.save.mockResolvedValue(updatedInvitation);
+
+      const result = await service.respondToInvitation(
+        respondInput,
+        mockUserId,
+      );
+
+      expect(result.status).toBe(InvitationStatus.ACCEPTED);
+      expect(respondManager.save).toHaveBeenCalled();
+    });
+
+    it('declines an invitation', async () => {
+      const respondInput = {
+        invitationId: 1,
+        status: InvitationStatus.DECLINED,
+      };
+
+      const mockInvitation = {
+        id: 1,
+        hangoutId: 1,
+        inviteeId: mockUserId,
+        inviterId: 2,
+        status: InvitationStatus.PENDING,
+        respondedAt: null,
+      };
+
+      const respondManager = (service as any).respondManager;
+      respondManager.findOne.mockResolvedValue(mockInvitation);
+      respondManager.save.mockResolvedValue({
+        ...mockInvitation,
+        status: InvitationStatus.DECLINED,
+      });
+
+      const result = await service.respondToInvitation(
+        respondInput,
+        mockUserId,
+      );
+
+      expect(result.status).toBe(InvitationStatus.DECLINED);
+    });
+
+    it('responds with maybe to an invitation', async () => {
+      const respondInput = {
+        invitationId: 1,
+        status: InvitationStatus.MAYBE,
+      };
+
+      const mockInvitation = {
+        id: 1,
+        hangoutId: 1,
+        inviteeId: mockUserId,
+        inviterId: 2,
+        status: InvitationStatus.PENDING,
+        respondedAt: null,
+      };
+
+      const respondManager = (service as any).respondManager;
+      respondManager.findOne.mockResolvedValue(mockInvitation);
+      respondManager.save.mockResolvedValue({
+        ...mockInvitation,
+        status: InvitationStatus.MAYBE,
+      });
+
+      const result = await service.respondToInvitation(
+        respondInput,
+        mockUserId,
+      );
+
+      expect(result.status).toBe(InvitationStatus.MAYBE);
+    });
+
+    it('throws error when invitation not found', async () => {
+      const respondInput = {
+        invitationId: 999,
+        status: InvitationStatus.ACCEPTED,
+      };
+
+      const respondManager = (service as any).respondManager;
+      respondManager.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.respondToInvitation(respondInput, mockUserId),
+      ).rejects.toThrow('Invitation not found');
+    });
+
+    it('throws HangoutUnauthorizedError when user is not the invitee', async () => {
+      const respondInput = {
+        invitationId: 1,
+        status: InvitationStatus.ACCEPTED,
+      };
+
+      const mockInvitation = {
+        id: 1,
+        hangoutId: 1,
+        inviteeId: 999, // Different invitee
+        inviterId: 2,
+        status: InvitationStatus.PENDING,
+      };
+
+      const respondManager = (service as any).respondManager;
+      respondManager.findOne.mockResolvedValue(mockInvitation);
+
+      await expect(
+        service.respondToInvitation(respondInput, mockUserId),
+      ).rejects.toThrow('Not authorized to respond to this invitation');
+    });
+
+    it('throws error when trying to set status to pending', async () => {
+      const respondInput = {
+        invitationId: 1,
+        status: InvitationStatus.PENDING,
+      };
+
+      const mockInvitation = {
+        id: 1,
+        hangoutId: 1,
+        inviteeId: mockUserId,
+        inviterId: 2,
+        status: InvitationStatus.PENDING,
+      };
+
+      const respondManager = (service as any).respondManager;
+      respondManager.findOne.mockResolvedValue(mockInvitation);
+
+      await expect(
+        service.respondToInvitation(respondInput, mockUserId),
+      ).rejects.toThrow('Cannot set invitation status to pending');
+    });
+
+    it('records respondedAt timestamp', async () => {
+      const respondInput = {
+        invitationId: 1,
+        status: InvitationStatus.ACCEPTED,
+      };
+
+      const mockInvitation = {
+        id: 1,
+        hangoutId: 1,
+        inviteeId: mockUserId,
+        inviterId: 2,
+        status: InvitationStatus.PENDING,
+        respondedAt: null,
+      };
+
+      const respondManager = (service as any).respondManager;
+      respondManager.findOne.mockResolvedValue(mockInvitation);
+      respondManager.save.mockImplementation((entity, data) => {
+        expect(data.respondedAt).toBeInstanceOf(Date);
+        return Promise.resolve(data);
+      });
+
+      await service.respondToInvitation(respondInput, mockUserId);
+
+      expect(respondManager.save).toHaveBeenCalled();
+    });
+  });
+
+  describe('getInvitations', () => {
+    let mockQueryBuilder: any;
+    let mockCountQuery: any;
+
+    beforeEach(() => {
+      mockQueryBuilder = {
+        createQueryBuilder: jest.fn().mockReturnThis(),
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
+        leftJoin: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        getMany: jest.fn(),
+      };
+
+      mockCountQuery = {
+        createQueryBuilder: jest.fn().mockReturnThis(),
+        leftJoin: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getCount: jest.fn(),
+      };
+
+      invitationRepository.createQueryBuilder.mockImplementation(
+        () => mockQueryBuilder,
+      );
+    });
+
+    it('returns invitations where user is the invitee', async () => {
+      const mockInvitations = [
+        {
+          id: 1,
+          hangoutId: 1,
+          inviteeId: mockUserId,
+          inviterId: 2,
+          status: InvitationStatus.PENDING,
+          createdAt: new Date('2024-01-01'),
+        },
+      ];
+
+      mockQueryBuilder.getMany.mockResolvedValue(mockInvitations);
+      mockCountQuery.getCount.mockResolvedValue(1);
+
+      // Mock the second createQueryBuilder call for count
+      invitationRepository.createQueryBuilder
+        .mockReturnValueOnce(mockQueryBuilder)
+        .mockReturnValueOnce(mockCountQuery);
+
+      const result = await service.getInvitations({}, mockUserId);
+
+      expect(result.edges).toHaveLength(1);
+      expect(result.totalCount).toBe(1);
+      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
+        '(invitation.invitee_id = :requestingUserId OR invitation.inviter_id = :requestingUserId OR hangout.user_id = :requestingUserId)',
+        { requestingUserId: mockUserId },
+      );
+    });
+
+    it('returns invitations where user is the inviter', async () => {
+      const mockInvitations = [
+        {
+          id: 1,
+          hangoutId: 1,
+          inviteeId: 2,
+          inviterId: mockUserId,
+          status: InvitationStatus.PENDING,
+          createdAt: new Date('2024-01-01'),
+        },
+      ];
+
+      mockQueryBuilder.getMany.mockResolvedValue(mockInvitations);
+      mockCountQuery.getCount.mockResolvedValue(1);
+
+      invitationRepository.createQueryBuilder
+        .mockReturnValueOnce(mockQueryBuilder)
+        .mockReturnValueOnce(mockCountQuery);
+
+      const result = await service.getInvitations({}, mockUserId);
+
+      expect(result.edges).toHaveLength(1);
+      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
+        '(invitation.invitee_id = :requestingUserId OR invitation.inviter_id = :requestingUserId OR hangout.user_id = :requestingUserId)',
+        { requestingUserId: mockUserId },
+      );
+    });
+
+    it('applies hangoutId filter', async () => {
+      mockQueryBuilder.getMany.mockResolvedValue([]);
+      mockCountQuery.getCount.mockResolvedValue(0);
+
+      invitationRepository.createQueryBuilder
+        .mockReturnValueOnce(mockQueryBuilder)
+        .mockReturnValueOnce(mockCountQuery);
+
+      await service.getInvitations({ hangoutId: 5 }, mockUserId);
+
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'invitation.hangout_id = :hangoutId',
+        { hangoutId: 5 },
+      );
+    });
+
+    it('applies inviteeId filter', async () => {
+      mockQueryBuilder.getMany.mockResolvedValue([]);
+      mockCountQuery.getCount.mockResolvedValue(0);
+
+      invitationRepository.createQueryBuilder
+        .mockReturnValueOnce(mockQueryBuilder)
+        .mockReturnValueOnce(mockCountQuery);
+
+      await service.getInvitations({ inviteeId: 3 }, mockUserId);
+
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'invitation.invitee_id = :inviteeId',
+        { inviteeId: 3 },
+      );
+    });
+
+    it('applies status filter', async () => {
+      mockQueryBuilder.getMany.mockResolvedValue([]);
+      mockCountQuery.getCount.mockResolvedValue(0);
+
+      invitationRepository.createQueryBuilder
+        .mockReturnValueOnce(mockQueryBuilder)
+        .mockReturnValueOnce(mockCountQuery);
+
+      await service.getInvitations(
+        { status: InvitationStatus.ACCEPTED },
+        mockUserId,
+      );
+
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'invitation.status = :status',
+        { status: InvitationStatus.ACCEPTED },
+      );
+    });
+
+    it('respects pagination limits', async () => {
+      const mockInvitations = Array(25).fill({
+        id: 1,
+        hangoutId: 1,
+        inviteeId: mockUserId,
+        inviterId: 2,
+        status: InvitationStatus.PENDING,
+        createdAt: new Date('2024-01-01'),
+      });
+
+      mockQueryBuilder.getMany.mockResolvedValue(mockInvitations);
+      mockCountQuery.getCount.mockResolvedValue(25);
+
+      invitationRepository.createQueryBuilder
+        .mockReturnValueOnce(mockQueryBuilder)
+        .mockReturnValueOnce(mockCountQuery);
+
+      await service.getInvitations({ first: 20 }, mockUserId);
+
+      expect(mockQueryBuilder.take).toHaveBeenCalledWith(21); // +1 for hasNextPage detection
+    });
+
+    it('limits page size to maximum of 100', async () => {
+      mockQueryBuilder.getMany.mockResolvedValue([]);
+      mockCountQuery.getCount.mockResolvedValue(0);
+
+      invitationRepository.createQueryBuilder
+        .mockReturnValueOnce(mockQueryBuilder)
+        .mockReturnValueOnce(mockCountQuery);
+
+      await service.getInvitations({ first: 500 }, mockUserId);
+
+      expect(mockQueryBuilder.take).toHaveBeenCalledWith(101); // max 100 + 1
+    });
+
+    it('handles cursor pagination', async () => {
+      const cursor = Buffer.from('2024-01-01T00:00:00.000Z').toString('base64');
+
+      mockQueryBuilder.getMany.mockResolvedValue([]);
+      mockCountQuery.getCount.mockResolvedValue(0);
+
+      invitationRepository.createQueryBuilder
+        .mockReturnValueOnce(mockQueryBuilder)
+        .mockReturnValueOnce(mockCountQuery);
+
+      await service.getInvitations({ after: cursor }, mockUserId);
+
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'invitation.created_at > :afterDate',
+        { afterDate: new Date('2024-01-01T00:00:00.000Z') },
+      );
+    });
+
+    it('throws error for invalid cursor', async () => {
+      const invalidCursor = 'invalid-base64';
+
+      await expect(
+        service.getInvitations({ after: invalidCursor }, mockUserId),
+      ).rejects.toThrow('Invalid after cursor');
+    });
+
+    it('calculates hasNextPage correctly when more results exist', async () => {
+      const mockInvitations = Array(21)
+        .fill(null)
+        .map((_, i) => ({
+          id: i + 1,
+          hangoutId: 1,
+          inviteeId: mockUserId,
+          inviterId: 2,
+          status: InvitationStatus.PENDING,
+          createdAt: new Date('2024-01-01'),
+        }));
+
+      mockQueryBuilder.getMany.mockResolvedValue(mockInvitations);
+      mockCountQuery.getCount.mockResolvedValue(30);
+
+      invitationRepository.createQueryBuilder
+        .mockReturnValueOnce(mockQueryBuilder)
+        .mockReturnValueOnce(mockCountQuery);
+
+      const result = await service.getInvitations({ first: 20 }, mockUserId);
+
+      expect(result.edges).toHaveLength(20); // Should remove extra item
+      expect(result.pageInfo.hasNextPage).toBe(true);
+    });
+
+    it('sets hasNextPage to false when no more results', async () => {
+      const mockInvitations = [
+        {
+          id: 1,
+          hangoutId: 1,
+          inviteeId: mockUserId,
+          inviterId: 2,
+          status: InvitationStatus.PENDING,
+          createdAt: new Date('2024-01-01'),
+        },
+      ];
+
+      mockQueryBuilder.getMany.mockResolvedValue(mockInvitations);
+      mockCountQuery.getCount.mockResolvedValue(1);
+
+      invitationRepository.createQueryBuilder
+        .mockReturnValueOnce(mockQueryBuilder)
+        .mockReturnValueOnce(mockCountQuery);
+
+      const result = await service.getInvitations({ first: 20 }, mockUserId);
+
+      expect(result.pageInfo.hasNextPage).toBe(false);
+    });
+
+    it('generates proper cursors for edges', async () => {
+      const createdAt = new Date('2024-01-01T12:00:00.000Z');
+      const mockInvitations = [
+        {
+          id: 1,
+          hangoutId: 1,
+          inviteeId: mockUserId,
+          inviterId: 2,
+          status: InvitationStatus.PENDING,
+          createdAt,
+        },
+      ];
+
+      mockQueryBuilder.getMany.mockResolvedValue(mockInvitations);
+      mockCountQuery.getCount.mockResolvedValue(1);
+
+      invitationRepository.createQueryBuilder
+        .mockReturnValueOnce(mockQueryBuilder)
+        .mockReturnValueOnce(mockCountQuery);
+
+      const result = await service.getInvitations({}, mockUserId);
+
+      const expectedCursor = Buffer.from(createdAt.toISOString()).toString(
+        'base64',
+      );
+      expect(result.edges[0].cursor).toBe(expectedCursor);
+      expect(result.pageInfo.startCursor).toBe(expectedCursor);
+      expect(result.pageInfo.endCursor).toBe(expectedCursor);
+    });
+
+    it('applies authorization filter to count query', async () => {
+      mockQueryBuilder.getMany.mockResolvedValue([]);
+      mockCountQuery.getCount.mockResolvedValue(0);
+
+      invitationRepository.createQueryBuilder
+        .mockReturnValueOnce(mockQueryBuilder)
+        .mockReturnValueOnce(mockCountQuery);
+
+      await service.getInvitations({}, mockUserId);
+
+      expect(mockCountQuery.where).toHaveBeenCalledWith(
+        '(invitation.invitee_id = :requestingUserId OR invitation.inviter_id = :requestingUserId OR hangout.user_id = :requestingUserId)',
+        { requestingUserId: mockUserId },
       );
     });
   });

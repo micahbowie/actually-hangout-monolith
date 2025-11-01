@@ -11,6 +11,15 @@ Comprehensive database schema documentation with entity-relationship diagrams:
 - Schema insights and best practices
 - Migration requirements
 
+### [Hangout Update Feature](./hangout-update-feature.md)
+Complete documentation for the hangout update functionality:
+- API endpoints and GraphQL mutations
+- Sequence diagrams for all update flows
+- Data model and entity relationships
+- Authorization and validation rules
+- Error handling
+- Examples and testing guidance
+
 ## Viewing Mermaid Diagrams
 
 The diagrams in this documentation use [Mermaid](https://mermaid.js.org/) syntax. They can be viewed in:

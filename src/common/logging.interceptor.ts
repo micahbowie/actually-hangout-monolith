@@ -120,7 +120,7 @@ export class LoggingInterceptor implements NestInterceptor {
     requestType: string,
     error?: Error,
   ): void {
-    const requestId = RequestContextService.getRequestId();
+    const { requestId, correlationId } = RequestContextService.getContext();
 
     const logData = {
       method,
@@ -130,6 +130,7 @@ export class LoggingInterceptor implements NestInterceptor {
       responseTime,
       requestType,
       requestId,
+      correlationId,
       ...(error && { error: error.message }),
     };
 
