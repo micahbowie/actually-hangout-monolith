@@ -32,7 +32,7 @@ export type CollaboratorCreatedData = {
  * 3. Send via Expo push notification service
  * 4. Track delivery status
  */
-export async function sendInvitationAcceptedNotification(
+export function sendInvitationAcceptedNotification(
   data: InvitationAcceptedData,
 ): Promise<boolean> {
   logger.log({
@@ -65,7 +65,7 @@ export async function sendInvitationAcceptedNotification(
     },
   });
 
-  return true;
+  return Promise.resolve(true);
 }
 
 /**
@@ -75,7 +75,7 @@ export async function sendInvitationAcceptedNotification(
  * TODO: Connect to actual HangoutsService
  * Currently mocked with logging only
  */
-export async function createCollaboratorFromInvitation(
+export function createCollaboratorFromInvitation(
   data: InvitationAcceptedData,
 ): Promise<CollaboratorCreatedData | null> {
   logger.log({
@@ -94,7 +94,7 @@ export async function createCollaboratorFromInvitation(
       hangoutId: data.hangoutId,
       correlationId: data.correlationId,
     });
-    return null;
+    return Promise.resolve(null);
   }
 
   // TODO: Check if collaborator already exists (idempotency)
@@ -114,14 +114,14 @@ export async function createCollaboratorFromInvitation(
     ...collaboratorData,
   });
 
-  return collaboratorData;
+  return Promise.resolve(collaboratorData);
 }
 
 /**
  * Activity: Log invitation acceptance event for analytics
  * This activity is idempotent and tracks acceptance events
  */
-export async function logInvitationAcceptanceEvent(
+export function logInvitationAcceptanceEvent(
   data: InvitationAcceptedData,
 ): Promise<boolean> {
   logger.log({
@@ -147,5 +147,5 @@ export async function logInvitationAcceptanceEvent(
   //   properties: { ... }
   // });
 
-  return true;
+  return Promise.resolve(true);
 }
